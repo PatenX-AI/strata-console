@@ -18,10 +18,13 @@ public:
     bool select_config(const std::string& path, std::string& err);
     bool select_model(const std::string& id, std::string& err);
     bool set_data_dir(const std::string& path, std::string& err);
+    bool merge_user_args_into_config(std::string& err);
+    bool save_as(const std::string& name, std::string& err);
     bool apply(const json& form, std::string& err);
 
     bool start_preflight(std::string& err) const;
     json command_preview() const;
+    std::string llama_swap_yaml() const;
     std::wstring build_command(bool force_lazy) const;
 
     json backups() const;
@@ -44,6 +47,7 @@ private:
     mutable std::mutex m_;
     json launcher_ = json::object();
     json cfg_ = json::object();
+    json saved_user_args_ = json::array();
     std::string config_path_;
     std::string root_;
     std::string data_dir_;

@@ -102,7 +102,7 @@ json slim_metrics(const json& m) {
     json out = json::object();
     if (!m.is_object()) return out;
     const char* keys[] = {"engine", "live", "hardware", "hardware_static",
-                          "requests", "totals", "conversation_cache"};
+                          "work", "requests", "totals", "conversation_cache"};
     for (const char* k : keys) {
         auto it = m.find(k);
         if (it != m.end()) out[k] = *it;
@@ -222,6 +222,21 @@ bool StatusCache::merge_history_locked(const json& metrics) {
     auto it = metrics.find("requests");
     if (it == metrics.end() || !it->is_array()) return false;
 
+    auto work = metrics.find("work");
+    if (work != metrics.end() && work->is_object()) {
+        auto active = work->find("requests");
+        if (active != work->end() && active->is_array()) {
+            for (const auto& row : *active) {
+                if (!row.is_object()) continue;
+                std::string id = row.value("id", "");
+                if (!id.empty() && row.contains("slot") && row["slot"].is_number_integer()) {
+                    slot_by_request_[id] = row["slot"].get<int>();
+                }
+            }
+            if (slot_by_request_.size() > 2000) slot_by_request_.clear();
+        }
+    }
+
     std::set<std::string> keys;
     for (const auto& r : history_) if (r.is_object()) keys.insert(request_key(r));
 
@@ -235,6 +250,10 @@ bool StatusCache::merge_history_locked(const json& metrics) {
         if (keys.count(key)) continue;
         json r = src;
         if (!r.contains("model") && !model.empty()) r["model"] = model;
+        if (!r.contains("slot")) {
+            auto sid = slot_by_request_.find(r.value("id", ""));
+            if (sid != slot_by_request_.end()) r["slot"] = sid->second;
+        }
         history_.push_back(std::move(r));
         keys.insert(key);
         changed = true;
@@ -283,8 +302,25 @@ void StatusCache::loop() {
             std::string err;
             auto health = util::http_get_json(port, "/health", key, 800, &st, &err);
             auto metrics = util::http_get_json(port, "/metrics", key, 1200, &st, &err);
+            int tel_status = 0;
+            std::string tel_err;
+            auto telemetry = util::http_get_json(port, "/v1/telemetry", key, 1200, &tel_status, &tel_err);
             std::string last = util::last_nonempty_line(log_path);
             std::lock_guard<std::mutex> lk(m_);
+            if (telemetry && telemetry->is_object()) {
+                auto work = telemetry->find("work");
+                if (work != telemetry->end() && work->is_object()) {
+                    auto active = work->find("requests");
+                    if (active != work->end() && active->is_array()) {
+                        for (const auto& row : *active) {
+                            if (!row.is_object()) continue;
+                            std::string id = row.value("id", "");
+                            if (!id.empty() && row.contains("slot") && row["slot"].is_number_integer())
+                                slot_by_request_[id] = row["slot"].get<int>();
+                        }
+                    }
+                }
+            }
             if (health && health->is_object()) {
                 health_ = *health;
                 failures_ = 0;

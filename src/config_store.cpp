@@ -4,6 +4,7 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <sstream>
 
 namespace {
 
@@ -230,6 +231,38 @@ std::string pretty_native_name(const std::string& configured, const std::string&
     return fallback;
 }
 
+std::string find_vision_exe(const std::string& root, bool gpu) {
+    std::string main = root + "\\engine\\strata-vision.exe";
+    std::error_code ec;
+    if (gpu) {
+        if (util::is_file(main) && file_size_of(main) > 10 * 1024 * 1024) return main;
+        return {};
+    }
+    std::string cpu;
+    for (auto& e : fs::directory_iterator(util::path(root + "\\engine"), ec)) {
+        if (ec) break;
+        if (!e.is_regular_file()) continue;
+        std::string n = lower_ascii(util::u8(e.path().filename()));
+        if (n.rfind("strata-vision-cpu", 0) == 0 && e.path().extension() == L".exe") {
+            cpu = util::u8(e.path());
+            break;
+        }
+    }
+    if (!cpu.empty()) return cpu;
+    if (util::is_file(main) && file_size_of(main) <= 10 * 1024 * 1024) return main;
+    return {};
+}
+
+std::string yaml_quote(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') out += "''";
+        else out += c;
+    }
+    out += "'";
+    return out;
+}
+
 std::string safe_model_id(const std::string& s) {
     std::string out;
     for (unsigned char c : s) {
@@ -300,6 +333,38 @@ void set_flag(json& args, const std::string& flag, bool on) {
             else ++i;
         }
     }
+}
+
+json update_user_args(const json& original, const json& effective) {
+    json result = json::array();
+    if (!original.is_array() || !effective.is_array()) return result;
+    auto groups_of = [](const json& args) {
+        std::vector<std::pair<std::string, json>> groups;
+        json current = json::array();
+        std::string flag;
+        for (const auto& v : args) {
+            if (!v.is_string()) continue;
+            std::string s = v.get<std::string>();
+            if (s.rfind("--", 0) == 0) {
+                if (!current.empty()) groups.emplace_back(flag, current);
+                current = json::array();
+                flag = s;
+            }
+            current.push_back(s);
+        }
+        if (!current.empty()) groups.emplace_back(flag, current);
+        return groups;
+    };
+    auto effective_groups = groups_of(effective);
+    std::map<std::string, json> by_flag;
+    for (const auto& g : effective_groups) if (!g.first.empty()) by_flag[g.first] = g.second;
+    for (const auto& g : groups_of(original)) {
+        if (g.first.empty()) continue;
+        auto it = by_flag.find(g.first);
+        if (it == by_flag.end()) continue;
+        for (const auto& v : it->second) result.push_back(v);
+    }
+    return result;
 }
 
 void merge_user_args(json& cfg) {
@@ -458,6 +523,7 @@ void ConfigStore::load_config_locked() {
     }
     cfg_ = *j;
     if (!cfg_.contains("args") || !cfg_["args"].is_array()) cfg_["args"] = json::array();
+    saved_user_args_ = cfg_.value("user_args", json::array());
     merge_user_args(cfg_);
 }
 
@@ -516,7 +582,7 @@ json ConfigStore::models_locked() const {
         int context = 0;
     };
     std::vector<CfgInfo> configs;
-    std::map<std::string, size_t> by_pack;
+    std::map<std::string, std::vector<size_t>> by_pack;
     std::error_code ec;
 
     for (auto& e : fs::directory_iterator(util::path(root_), ec)) {
@@ -544,10 +610,7 @@ json ConfigStore::models_locked() const {
             ci.mmproj = sval((*j)["vision"], "mmproj");
         configs.push_back(ci);
         if (!ci.pack.empty()) {
-            std::string key = path_key(ci.pack);
-            auto it = by_pack.find(key);
-            if (it == by_pack.end() || path_key(ci.path) == path_key(config_path_))
-                by_pack[key] = configs.size() - 1;
+            by_pack[path_key(ci.pack)].push_back(configs.size() - 1);
         }
     }
 
@@ -563,7 +626,7 @@ json ConfigStore::models_locked() const {
         return {};
     };
 
-    auto add_model = [&](const std::string& pack, const CfgInfo* ci) {
+    auto add_model = [&](const std::string& pack, const CfgInfo* ci, bool multi) {
         std::string pack_name = util::u8(util::path(pack).filename());
         std::string shard = first_shard_name(pack);
         std::string native = ci ? ci->native : "";
@@ -576,9 +639,17 @@ json ConfigStore::models_locked() const {
         std::string mmproj = ci ? ci->mmproj : "";
         if (mmproj.empty() && !native.empty()) mmproj = find_mmproj(parent_of(native));
 
-        std::string id = safe_model_id(pack_name);
         std::string configured = ci ? ci->model_name : "";
-        std::string display = pretty_model_name(pack_name, configured);
+        std::string id = safe_model_id(pack_name);
+        if (multi && ci) {
+            std::string stem = filename_of(ci->path);
+            if (stem.rfind("strata-", 0) == 0) stem = stem.substr(7);
+            if (stem.size() > 5 && stem.substr(stem.size() - 5) == ".json")
+                stem = stem.substr(0, stem.size() - 5);
+            id = safe_model_id(stem);
+        }
+        std::string display = multi && !configured.empty()
+            ? configured : pretty_model_name(pack_name, configured);
         std::string quant = detect_quant(util::u8(util::path(native).filename()) + " " + pack_name);
         bool native_ok = !native.empty() && util::is_file(native);
         bool tokenizer_ok = !tokenizer.empty() && util::is_dir(tokenizer);
@@ -619,10 +690,15 @@ json ConfigStore::models_locked() const {
             std::string key = path_key(pack);
             seen_packs.insert(key);
             auto it = by_pack.find(key);
-            const CfgInfo* ci = it == by_pack.end() ? nullptr : &configs[it->second];
-            if (!ci && !util::is_file(pack + "\\experts.bin")) continue;
-            if (ci) seen_configs.insert(path_key(ci->path));
-            add_model(pack, ci);
+            if (it == by_pack.end()) {
+                if (util::is_file(pack + "\\experts.bin")) add_model(pack, nullptr, false);
+            } else {
+                bool multi = it->second.size() > 1;
+                for (size_t idx : it->second) {
+                    seen_configs.insert(path_key(configs[idx].path));
+                    add_model(pack, &configs[idx], multi);
+                }
+            }
         }
     }
 
@@ -793,6 +869,8 @@ json ConfigStore::view_locked() const {
     j["strata_root"] = root_;
     j["data_dir"] = data_dir_;
     j["model_name"] = sval(cfg_, "model_name");
+    j["aliases"] = list_text(cfg_.value("aliases", json()));
+    j["user_args"] = saved_user_args_.is_array() ? saved_user_args_ : json::array();
     j["exe"] = sval(cfg_, "exe");
     j["tokenizer"] = sval(cfg_, "tokenizer");
     j["log"] = log_path_locked();
@@ -856,14 +934,36 @@ json ConfigStore::view_locked() const {
     j["reasoning_effort"] = sval(cfg_, "reasoning_effort");
     j["reasoning_budget_tokens"] = cfg_.contains("reasoning_budget_tokens")
         ? cfg_["reasoning_budget_tokens"] : json();
+    j["answer_room"] = cfg_.contains("answer_room") ? bval(cfg_, "answer_room", true) : true;
+    j["reasoning_close_retry"] = bval(cfg_, "reasoning_close_retry", false);
+    {
+        std::string loop = "off";
+        auto it = cfg_.find("reasoning_loop_recovery");
+        if (it != cfg_.end()) {
+            if (it->is_string()) loop = it->get<std::string>();
+            else if (it->is_boolean() && it->get<bool>()) loop = "recover";
+        }
+        j["reasoning_loop_recovery"] = loop;
+    }
+    j["repeat_stop_tokens"] = cfg_.contains("repeat_stop_tokens")
+        ? cfg_["repeat_stop_tokens"] : 256;
+    j["tool_call_recovery"] = cfg_.contains("tool_call_recovery")
+        ? bval(cfg_, "tool_call_recovery", true) : true;
+    j["effort_position"] = sval(cfg_, "effort_position", "start");
+    j["anthropic_thinking"] = sval(cfg_, "anthropic_thinking", "model");
+    j["codex_thread_titles"] = bval(cfg_, "codex_thread_titles", false);
+    j["codex_compaction_cache"] = bval(cfg_, "codex_compaction_cache", false);
     {
         auto s = cfg_.value("sampling", json::object());
         if (!s.is_object()) s = json::object();
         j["temperature"] = s.contains("temperature") ? s["temperature"] : json();
         j["top_p"] = s.contains("top_p") ? s["top_p"] : json();
         j["top_k"] = s.contains("top_k") ? s["top_k"] : json();
+        j["min_p"] = s.contains("min_p") ? s["min_p"] : json();
         j["presence_penalty"] = s.contains("presence_penalty") ? s["presence_penalty"] : json();
+        j["frequency_penalty"] = s.contains("frequency_penalty") ? s["frequency_penalty"] : json();
         j["repetition_penalty"] = s.contains("repetition_penalty") ? s["repetition_penalty"] : json();
+        j["penalty_last_n"] = s.contains("penalty_last_n") ? s["penalty_last_n"] : json();
         j["seed"] = s.contains("seed") ? s["seed"] : json();
     }
     {
@@ -890,7 +990,8 @@ json ConfigStore::view_locked() const {
                                      [](unsigned char c) { return std::isdigit(c) != 0; });
         std::string detected = detect_mtp_path_locked();
         std::string check_path = (!mtp_value.empty() && !mtp_count) ? mtp_value : detected;
-        j["mtp"] = !mtp_value.empty();
+        std::string draft_mode = sval(cfg_, "drafting", "");
+        j["mtp"] = draft_mode != "off" && (!mtp_value.empty() || draft_mode == "mtp" || draft_mode == "dflash2");
         j["mtp_value"] = mtp_value;
         j["mtp_kind"] = mtp_value.empty() ? "" : (mtp_count ? "count" : "path");
         j["mtp_path"] = mtp_count ? "" : mtp_value;
@@ -899,15 +1000,36 @@ json ConfigStore::view_locked() const {
         j["mtp_available"] = mtp_count ||
             (!check_path.empty() && util::is_file(check_path + "\\experts.bin"));
     }
+    j["drafting"] = sval(cfg_, "drafting", "auto");
     j["spec"] = arg_value(args, "--spec").value_or("");
     j["spec_min_p"] = arg_value(args, "--spec-min-p").value_or("");
     j["prefill"] = arg_value(args, "--prefill").value_or("");
     j["expert_cache"] = arg_value(args, "--expert-cache").value_or("");
     j["kv_resident"] = arg_value(args, "--kv-resident").value_or("");
     j["vram_reserve"] = arg_int("--vram-reserve-mib", 1024);
+    j["vram_elastic"] = bval(cfg_, "vram_elastic", false);
+    j["vram_segment_mib"] = cfg_.contains("vram_segment_mib") ? cfg_["vram_segment_mib"] : json();
+    j["expert_profile_save"] = sval(cfg_, "expert_profile_save");
+    j["expert_profile_save_every"] = cfg_.contains("expert_profile_save_every")
+        ? cfg_["expert_profile_save_every"] : json();
+    j["resident_budget_gib"] = arg_value(args, "--resident-budget-gib").value_or("");
+    j["pool_workers"] = arg_value(args, "--pool-workers").value_or("");
+    j["ple_io"] = arg_value(args, "--ple-io").value_or("");
+    j["conversation_cache_mib"] = arg_value(args, "--conversation-cache-mib").value_or("");
+    j["conversation_cache_slots"] = arg_value(args, "--conversation-cache-slots").value_or("");
+    j["conversation_cache_min_free_mib"] = arg_value(args, "--conversation-cache-min-free-mib").value_or("");
+    j["conversation_cache_min_tokens"] = arg_value(args, "--conversation-cache-min-tokens").value_or("");
+    j["conversation_cache_park_gain"] = arg_value(args, "--conversation-cache-park-gain").value_or("");
+    j["parallel"] = cfg_.contains("parallel") ? cfg_["parallel"] : 1;
+    j["max_queue"] = cfg_.contains("max_queue") ? cfg_["max_queue"] : json();
+    j["queue_timeout"] = cfg_.contains("queue_timeout") ? cfg_["queue_timeout"] : json();
+    j["engine_ready_s"] = cfg_.contains("engine_ready_s") ? cfg_["engine_ready_s"] : json();
 
-    std::string low_ram = has_flag(args, "--mmap-experts") ? "mmap" :
-                          has_flag(args, "--resident-experts") ? "resident" : "off";
+    bool resident_experts = has_flag(args, "--resident-experts");
+    bool budget_experts = arg_value(args, "--resident-budget-gib").has_value();
+    std::string low_ram = resident_experts ? "resident" :
+                          budget_experts ? "budget" :
+                          has_flag(args, "--mmap-experts") ? "mmap" : "off";
     j["low_ram"] = low_ram;
     j["vision"] = vision_enabled_locked();
     if (cfg_.contains("vision") && cfg_["vision"].is_object()) {
@@ -916,13 +1038,25 @@ json ConfigStore::view_locked() const {
         j["vision_gpu"] = bval(cfg_["vision"], "gpu", false);
         j["vision_max_tokens"] = ival(cfg_["vision"], "max_tokens", 768);
         j["vision_threads"] = ival(cfg_["vision"], "threads", 8);
+        bool gpu = bval(cfg_["vision"], "gpu", false);
+        j["vision_elastic"] = cfg_["vision"].contains("elastic")
+            ? bval(cfg_["vision"], "elastic", gpu) : gpu;
+        j["vision_elastic_idle_s"] = ival(cfg_["vision"], "elastic_idle_s", 120);
+        j["vision_elastic_mib"] = ival(cfg_["vision"], "elastic_mib", 2048);
+        j["vision_min_tokens"] = ival(cfg_["vision"], "min_tokens", 0);
     } else {
         j["vision_exe"] = "";
         j["vision_mmproj"] = "";
         j["vision_gpu"] = false;
         j["vision_max_tokens"] = 768;
         j["vision_threads"] = 8;
+        j["vision_elastic"] = false;
+        j["vision_elastic_idle_s"] = 120;
+        j["vision_elastic_mib"] = 2048;
+        j["vision_min_tokens"] = 0;
     }
+    j["vision_exe_gpu"] = find_vision_exe(root_, true);
+    j["vision_exe_cpu"] = find_vision_exe(root_, false);
 
     json lan_urls = json::array();
     for (const auto& ip : util::local_ipv4s()) lan_urls.push_back("http://" + ip);
@@ -972,6 +1106,7 @@ bool ConfigStore::select_config(const std::string& path, std::string& err) {
     config_path_ = path;
     cfg_ = *j;
     if (!cfg_.contains("args") || !cfg_["args"].is_array()) cfg_["args"] = json::array();
+    saved_user_args_ = cfg_.value("user_args", json::array());
     merge_user_args(cfg_);
     launcher_["config_path"] = config_path_;
     launcher_["strata_root"] = root_;
@@ -1093,6 +1228,7 @@ bool ConfigStore::select_model_locked(const std::string& id, std::string& err) {
     config_path_ = path;
     cfg_ = *j;
     if (!cfg_.contains("args") || !cfg_["args"].is_array()) cfg_["args"] = json::array();
+    saved_user_args_ = cfg_.value("user_args", json::array());
     merge_user_args(cfg_);
     launcher_["config_path"] = config_path_;
     launcher_["strata_root"] = root_;
@@ -1105,6 +1241,50 @@ bool ConfigStore::select_model_locked(const std::string& id, std::string& err) {
 bool ConfigStore::select_model(const std::string& id, std::string& err) {
     std::lock_guard<std::mutex> lk(m_);
     return select_model_locked(id, err);
+}
+
+bool ConfigStore::merge_user_args_into_config(std::string& err) {
+    std::lock_guard<std::mutex> lk(m_);
+    if (saved_user_args_.empty()) {
+        cfg_.erase("user_args");
+        return true;
+    }
+    if (!create_backup_locked(err)) return false;
+    json args = cfg_.value("args", json::array());
+    cfg_["args"] = args;
+    cfg_["args_written"] = args;
+    cfg_.erase("user_args");
+    saved_user_args_ = json::array();
+    if (!save_config_locked(err)) return false;
+    return true;
+}
+
+bool ConfigStore::save_as(const std::string& name, std::string& err) {
+    std::lock_guard<std::mutex> lk(m_);
+    std::string n = util::trim(name);
+    if (n.size() > 5 && n.substr(n.size() - 5) == ".json")
+        n = n.substr(0, n.size() - 5);
+    if (n.empty()) { err = "配置名称不能为空"; return false; }
+    if (n == "." || n == ".." || n.find("..") != std::string::npos) {
+        err = "配置名称不能包含 ..";
+        return false;
+    }
+    for (char c : n) {
+        if (c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<' || c == '>' || c == '|') {
+            err = "配置名称不能包含路径或非法字符";
+            return false;
+        }
+    }
+    if (n.rfind("strata-", 0) != 0) n = "strata-" + n;
+    std::string path = root_ + "\\" + n + ".json";
+    if (util::is_file(path)) { err = "配置已存在: " + n + ".json"; return false; }
+    config_path_ = path;
+    if (!save_config_locked(err)) return false;
+    launcher_["config_path"] = config_path_;
+    launcher_["strata_root"] = root_;
+    if (!save_launcher_locked(err)) return false;
+    return true;
 }
 
 bool ConfigStore::set_data_dir(const std::string& path, std::string& err) {
@@ -1275,6 +1455,7 @@ bool ConfigStore::restore_backup(const std::string& path, std::string& err) {
     if (ec) { err = "恢复失败: " + ec.message(); return false; }
     cfg_ = *j;
     if (!cfg_.contains("args") || !cfg_["args"].is_array()) cfg_["args"] = json::array();
+    saved_user_args_ = cfg_.value("user_args", json::array());
     merge_user_args(cfg_);
     return true;
 }
@@ -1303,6 +1484,10 @@ bool ConfigStore::apply(const json& form, std::string& err) {
     if (!args.is_array()) args = json::array();
 
     if (form.contains("model_name")) cfg_["model_name"] = str("model_name");
+    if (form.contains("aliases")) {
+        auto a = text_list(str("aliases"));
+        if (a.empty()) cfg_.erase("aliases"); else cfg_["aliases"] = a;
+    }
     if (form.contains("exe") && !str("exe").empty()) cfg_["exe"] = str("exe");
     if (form.contains("tokenizer")) cfg_["tokenizer"] = str("tokenizer");
     if (form.contains("log")) cfg_["log"] = str("log");
@@ -1356,7 +1541,7 @@ bool ConfigStore::apply(const json& form, std::string& err) {
         set_flag(args, "--mmap-experts", false);
         set_flag(args, "--resident-experts", false);
         std::string v = str("low_ram");
-        if (v == "mmap") set_flag(args, "--mmap-experts", true);
+        if (v == "mmap" || v == "budget") set_flag(args, "--mmap-experts", true);
         else if (v == "resident") set_flag(args, "--resident-experts", true);
     }
 
@@ -1406,6 +1591,25 @@ bool ConfigStore::apply(const json& form, std::string& err) {
         }
     }
 
+    if (form.contains("drafting")) {
+        std::string mode = util::trim(str("drafting"));
+        if (mode.empty()) mode = "auto";
+        if (mode != "auto" && mode != "mtp" && mode != "dflash2" && mode != "off") {
+            err = "草稿类型必须是 auto、mtp、dflash2 或 off";
+            return false;
+        }
+        if (form.contains("mtp") && !flag("mtp", false)) {
+            mode = "off";
+        }
+        if (mode == "off") {
+            remove_arg(args, "--mtp");
+            cfg_["mtp"] = false;
+        } else {
+            cfg_.erase("mtp");
+        }
+        cfg_["drafting"] = mode;
+    }
+
     auto set_optional = [&](const char* key, const char* flag_name) {
         if (!form.contains(key)) return;
         std::string v = str(key);
@@ -1426,7 +1630,108 @@ bool ConfigStore::apply(const json& form, std::string& err) {
         if (v <= 0) remove_arg(args, "--vram-reserve-mib");
         else set_arg(args, "--vram-reserve-mib", std::to_string(v));
     }
+    if (form.contains("vram_elastic")) {
+        set_bool_or_erase(cfg_, "vram_elastic", flag("vram_elastic", false));
+    }
+    auto optional_int = [&](const char* key, long long min, long long max) -> bool {
+        if (!form.contains(key)) return true;
+        std::string s = util::trim(str(key));
+        if (s.empty()) { cfg_.erase(key); return true; }
+        size_t pos = 0;
+        long long n = 0;
+        try { n = std::stoll(s, &pos); } catch (...) { pos = 0; }
+        if (pos != s.size() || n < min || n > max) {
+            err = std::string(key) + " 超出范围";
+            return false;
+        }
+        cfg_[key] = n;
+        return true;
+    };
+    if (!optional_int("vram_segment_mib", 128, 16384)) return false;
+    if (form.contains("expert_profile_save")) {
+        std::string v = util::trim(str("expert_profile_save"));
+        if (v.empty()) cfg_.erase("expert_profile_save"); else cfg_["expert_profile_save"] = v;
+    }
+    if (!optional_int("expert_profile_save_every", 0, 10080)) return false;
+    if (!optional_int("parallel", 1, 8)) return false;
+    if (!optional_int("max_queue", 0, 4096)) return false;
+    if (form.contains("queue_timeout")) {
+        std::string s = util::trim(str("queue_timeout"));
+        if (s.empty()) {
+            cfg_.erase("queue_timeout");
+        } else {
+            try {
+                double v = std::stod(s);
+                if (v < 0.1 || v > 600) { err = "queue_timeout 必须在 0.1-600 秒之间"; return false; }
+                if (!cfg_.contains("max_queue")) {
+                    err = "设置 queue_timeout 前请先设置 max_queue";
+                    return false;
+                }
+                cfg_["queue_timeout"] = v;
+            } catch (...) {
+                err = "queue_timeout 不是数字";
+                return false;
+            }
+        }
+    }
+    if (!optional_int("engine_ready_s", 1, 86400)) return false;
+    if (form.contains("resident_budget_gib")) {
+        std::string s = util::trim(str("resident_budget_gib"));
+        std::string low = form.contains("low_ram") ? util::trim(str("low_ram")) : "";
+        if (s.empty() || s == "0") {
+            if (low == "budget") {
+                err = "预算缓存模式需要填写 RAM 专家预算"; return false;
+            }
+            remove_arg(args, "--resident-budget-gib");
+        } else {
+            size_t pos = 0; long long n = 0;
+            try { n = std::stoll(s, &pos); } catch (...) { pos = 0; }
+            if (pos != s.size() || n < 1 || n > 1024) {
+                err = "RAM 专家预算必须是 1-1024 GiB"; return false;
+            }
+            if (low == "resident") {
+                err = "resident 模式与 RAM 专家预算互斥；请选择预算缓存"; return false;
+            }
+            set_arg(args, "--resident-budget-gib", std::to_string(n));
+            set_flag(args, "--mmap-experts", true);
+        }
+    }
+    if (form.contains("pool_workers")) {
+        std::string s = util::trim(str("pool_workers"));
+        if (s.empty()) remove_arg(args, "--pool-workers");
+        else {
+            size_t pos = 0; long long n = 0;
+            try { n = std::stoll(s, &pos); } catch (...) { pos = 0; }
+            if (pos != s.size() || n < 1 || n > 256) {
+                err = "CPU 专家线程必须是 1-256"; return false;
+            }
+            set_arg(args, "--pool-workers", std::to_string(n));
+        }
+    }
+    if (form.contains("ple_io")) {
+        std::string v = util::trim(str("ple_io"));
+        if (v.empty() || v == "auto") remove_arg(args, "--ple-io");
+        else if (v == "direct" || v == "ram" || v == "mmap") set_arg(args, "--ple-io", v);
+        else { err = "PLE I/O 必须是 auto、direct、ram 或 mmap"; return false; }
+    }
 
+    auto conv_int = [&](const char* arg, const char* key, long long lo, long long hi) -> bool {
+        if (!form.contains(key)) return true;
+        std::string v = util::trim(str(key));
+        if (v.empty()) { remove_arg(args, arg); return true; }
+        size_t pos = 0; long long n = 0;
+        try { n = std::stoll(v, &pos); } catch (...) { pos = 0; }
+        if (pos != v.size() || n < lo || n > hi) {
+            err = std::string(key) + " 超出范围"; return false;
+        }
+        set_arg(args, arg, std::to_string(n));
+        return true;
+    };
+    if (!conv_int("--conversation-cache-mib", "conversation_cache_mib", 0, 32768)) return false;
+    if (!conv_int("--conversation-cache-slots", "conversation_cache_slots", 1, 32)) return false;
+    if (!conv_int("--conversation-cache-min-free-mib", "conversation_cache_min_free_mib", 0, 65536)) return false;
+    if (!conv_int("--conversation-cache-min-tokens", "conversation_cache_min_tokens", 0, 1000000)) return false;
+    if (!conv_int("--conversation-cache-park-gain", "conversation_cache_park_gain", 0, 1000000)) return false;
     if (form.contains("vision")) {
         bool on = flag("vision", false);
         if (on) {
@@ -1452,6 +1757,13 @@ bool ConfigStore::apply(const json& form, std::string& err) {
                     }
                 }
             }
+            bool want_gpu = flag("vision_gpu", false);
+            std::string gpu_exe = find_vision_exe(root_, true);
+            std::string cpu_exe = find_vision_exe(root_, false);
+            if (want_gpu && !gpu_exe.empty() && (exe.empty() || exe == cpu_exe))
+                exe = gpu_exe;
+            if (!want_gpu && !cpu_exe.empty() && (exe.empty() || exe == gpu_exe))
+                exe = cpu_exe;
             if (!util::is_file(exe)) { err = "视觉编码器不存在: " + exe; return false; }
             if (!util::is_file(mmproj)) { err = "视觉 mmproj 不存在: " + mmproj; return false; }
             json v = cfg_.contains("vision") && cfg_["vision"].is_object()
@@ -1459,7 +1771,7 @@ bool ConfigStore::apply(const json& form, std::string& err) {
             v["exe"] = exe;
             v["mmproj"] = mmproj;
             v["model"] = arg_value(args, "--native").value_or(sval(v, "model"));
-            v["gpu"] = flag("vision_gpu", false);
+            v["gpu"] = want_gpu;
             int max_tokens = form.contains("vision_max_tokens")
                 ? (int)num("vision_max_tokens", ival(v, "max_tokens", 768))
                 : ival(v, "max_tokens", 768);
@@ -1474,6 +1786,28 @@ bool ConfigStore::apply(const json& form, std::string& err) {
             }
             v["max_tokens"] = max_tokens;
             v["threads"] = threads;
+            v["elastic"] = flag("vision_elastic", bval(v, "elastic", false));
+            int elastic_idle = form.contains("vision_elastic_idle_s")
+                ? (int)num("vision_elastic_idle_s", ival(v, "elastic_idle_s", 120))
+                : ival(v, "elastic_idle_s", 120);
+            int elastic_mib = form.contains("vision_elastic_mib")
+                ? (int)num("vision_elastic_mib", ival(v, "elastic_mib", 2048))
+                : ival(v, "elastic_mib", 2048);
+            int min_tokens = form.contains("vision_min_tokens")
+                ? (int)num("vision_min_tokens", ival(v, "min_tokens", 0))
+                : ival(v, "min_tokens", 0);
+            if (elastic_idle < 0 || elastic_idle > 86400) {
+                err = "视觉空闲卸载秒数必须在 0-86400 之间"; return false;
+            }
+            if (elastic_mib < 128 || elastic_mib > 16384) {
+                err = "视觉弹性显存必须在 128-16384 MiB 之间"; return false;
+            }
+            if (min_tokens < 0 || min_tokens > 4096) {
+                err = "视觉最小 tokens 必须在 0-4096 之间"; return false;
+            }
+            v["elastic_idle_s"] = elastic_idle;
+            v["elastic_mib"] = elastic_mib;
+            v["min_tokens"] = min_tokens;
             cfg_["vision"] = v;
             set_flag(args, "--vision", true);
         } else {
@@ -1568,6 +1902,55 @@ bool ConfigStore::apply(const json& form, std::string& err) {
         }
     }
 
+    if (form.contains("answer_room")) {
+        bool on = flag("answer_room", true);
+        if (on) cfg_.erase("answer_room"); else cfg_["answer_room"] = false;
+    }
+    if (form.contains("reasoning_close_retry")) {
+        set_bool_or_erase(cfg_, "reasoning_close_retry", flag("reasoning_close_retry", false));
+    }
+    if (form.contains("reasoning_loop_recovery")) {
+        std::string v = util::trim(str("reasoning_loop_recovery"));
+        if (v.empty() || v == "off") cfg_.erase("reasoning_loop_recovery");
+        else if (v == "stop") cfg_["reasoning_loop_recovery"] = "stop";
+        else if (v == "recover" || v == "true") cfg_["reasoning_loop_recovery"] = true;
+        else { err = "reasoning_loop_recovery 必须是 off、stop 或 recover"; return false; }
+    }
+    if (form.contains("repeat_stop_tokens")) {
+        std::string v = util::trim(str("repeat_stop_tokens"));
+        if (v.empty() || v == "256") cfg_.erase("repeat_stop_tokens");
+        else {
+            size_t pos = 0; long long n = 0;
+            try { n = std::stoll(v, &pos); } catch (...) { pos = 0; }
+            if (pos != v.size() || n < 0 || n > 1000000) {
+                err = "repeat_stop_tokens 必须是 0-1000000 的整数"; return false;
+            }
+            cfg_["repeat_stop_tokens"] = n;
+        }
+    }
+    if (form.contains("tool_call_recovery")) {
+        bool on = flag("tool_call_recovery", true);
+        if (on) cfg_.erase("tool_call_recovery"); else cfg_["tool_call_recovery"] = false;
+    }
+    if (form.contains("effort_position")) {
+        std::string v = util::trim(str("effort_position"));
+        if (v.empty() || v == "start") cfg_.erase("effort_position");
+        else if (v == "end") cfg_["effort_position"] = "end";
+        else { err = "effort_position 必须是 start 或 end"; return false; }
+    }
+    if (form.contains("anthropic_thinking")) {
+        std::string v = util::trim(str("anthropic_thinking"));
+        if (v.empty() || v == "model") cfg_.erase("anthropic_thinking");
+        else if (v == "on_request") cfg_["anthropic_thinking"] = "on_request";
+        else { err = "anthropic_thinking 必须是 model 或 on_request"; return false; }
+    }
+    if (form.contains("codex_thread_titles")) {
+        set_bool_or_erase(cfg_, "codex_thread_titles", flag("codex_thread_titles", false));
+    }
+    if (form.contains("codex_compaction_cache")) {
+        set_bool_or_erase(cfg_, "codex_compaction_cache", flag("codex_compaction_cache", false));
+    }
+
     {
         json sampling = cfg_.value("sampling", json::object());
         if (!sampling.is_object()) sampling = json::object();
@@ -1599,8 +1982,11 @@ bool ConfigStore::apply(const json& form, std::string& err) {
         if (!apply_number("temperature", 0, 2, false)) return false;
         if (!apply_number("top_p", 0.000001, 1, false)) return false;
         if (!apply_number("top_k", 1, 64, true)) return false;
+        if (!apply_number("min_p", 0, 1, false)) return false;
         if (!apply_number("presence_penalty", 0, 4, false)) return false;
+        if (!apply_number("frequency_penalty", 0, 4, false)) return false;
         if (!apply_number("repetition_penalty", 0.01, 4, false)) return false;
+        if (!apply_number("penalty_last_n", 0, 1000000, true)) return false;
         if (!apply_number("seed", 1, 9.0e18, true)) return false;
         if (sampling.empty()) cfg_.erase("sampling");
         else cfg_["sampling"] = sampling;
@@ -1640,8 +2026,10 @@ bool ConfigStore::apply(const json& form, std::string& err) {
     launcher_["data_dir"] = data_dir_;
 
     cfg_["args"] = args;
+    json kept_user = update_user_args(saved_user_args_, args);
+    if (kept_user.is_array() && !kept_user.empty()) cfg_["user_args"] = kept_user;
+    else cfg_.erase("user_args");
     cfg_["args_written"] = args;
-    cfg_.erase("user_args");
     if (!save_config_locked(err)) return false;
     std::string launcher_err;
     if (!save_launcher_locked(launcher_err)) { err = launcher_err; return false; }
@@ -1724,3 +2112,60 @@ json ConfigStore::command_preview() const {
                 {"log", log_path_locked()}};
 }
 
+std::string ConfigStore::llama_swap_yaml() const {
+    std::lock_guard<std::mutex> lk(m_);
+    std::string python = root_ + "\\.venv\\Scripts\\python.exe";
+    std::string server = root_ + "\\serve\\server.py";
+    int port = model_port_locked();
+    int ttl = (int)std::llround(dval(cfg_, "idle_unload_s", 3600.0));
+    if (ttl <= 0) ttl = 3600;
+    std::string model_id = sval(cfg_, "model_name");
+    if (model_id.empty()) {
+        model_id = filename_of(config_path_);
+        if (model_id.rfind("strata-", 0) == 0) model_id = model_id.substr(7);
+        if (model_id.size() > 5 && model_id.substr(model_id.size() - 5) == ".json")
+            model_id = model_id.substr(0, model_id.size() - 5);
+    }
+    std::string cmd = util::narrow(util::quote_arg(util::widen(python))) + " -u " +
+                      util::narrow(util::quote_arg(util::widen(server))) +
+                      " --engine strata --config " +
+                      util::narrow(util::quote_arg(util::widen(config_path_))) +
+                      " --port " + std::to_string(port) +
+                      " --host 127.0.0.1 --lazy";
+    std::ostringstream y;
+    y << "# Strata Console v0.1.3 export\n"
+      << "# 当前模型: " << model_id << "\n"
+      << "# 默认使用当前 Strata 端口 " << port << "。若与其它 llama-swap 模型冲突，\n"
+      << "# 请把 cmd 和 proxy 中的 " << port << " 都改为 ${PORT}。\n"
+      << "# 客户端仍需要携带 Strata 配置中的 API Key。\n"
+      << "healthCheckTimeout: 300\n"
+      << "startPort: 12400\n"
+      << "includeAliasesInList: true\n\n"
+      << "models:\n"
+      << "  " << yaml_quote(model_id) << ":\n"
+      << "    cmd: " << yaml_quote(cmd) << "\n"
+      << "    proxy: http://127.0.0.1:" << port << "\n"
+      << "    checkEndpoint: /health\n"
+      << "    ttl: " << ttl << "\n";
+    std::vector<std::string> aliases;
+    auto a = cfg_.value("aliases", json());
+    if (a.is_array()) {
+        for (const auto& v : a) if (v.is_string() && !v.get<std::string>().empty())
+            aliases.push_back(v.get<std::string>());
+    } else if (a.is_string()) {
+        std::string s = a.get<std::string>();
+        size_t start = 0;
+        while (start <= s.size()) {
+            size_t comma = s.find(',', start);
+            std::string item = util::trim(s.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+            if (!item.empty()) aliases.push_back(item);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+    }
+    if (!aliases.empty()) {
+        y << "    aliases:\n";
+        for (const auto& alias : aliases) y << "      - " << yaml_quote(alias) << "\n";
+    }
+    return y.str();
+}

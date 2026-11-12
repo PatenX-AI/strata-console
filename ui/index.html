@@ -1,12 +1,12 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Strata Console</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2310b981'/%3E%3Cpath d='M9 21c2.5 2 5.5 3 9 3 4 0 6-1.5 6-4 0-2.5-2-3.5-6-4.3-3.5-.7-5-1.5-5-3.2 0-1.6 1.6-2.5 4-2.5 2.2 0 4 .7 5.5 2' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="app.css?v=33">
-<script src="app.js?v=33" defer></script>
+<link rel="stylesheet" href="app.css?v=48">
+<script src="app.js?v=47" defer></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -119,48 +119,115 @@
         </div>
 
         <div class="section">
-          <div class="section-title"><span>推测解码</span><span class="badge plain">可选</span></div>
-          <div class="switch-line"><div class="copy"><strong>MTP 推测解码<span class="tip" data-tip="控制 --mtp：外部 MTP 模型使用独立草稿层，Qwen3.6 等自带草稿模型使用模型内 MTP。关闭只影响 MTP；提示词查找/后缀草稿仍可工作。">?</span></strong><small>控制外部草稿层或模型自带 MTP；关闭可释放显存</small></div><button class="st-toggle" id="mtpEnabled" aria-checked="false" aria-label="启用 MTP 推测解码"></button></div>
+          <button class="adv-toggle section-toggle" data-target="sectionMtp"><span>推测解码</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="sectionMtp">
+          <div class="switch-line"><div class="copy"><strong>启用推测解码<span class="tip" data-tip="总开关。关闭等价于 drafting=off；打开后可选择 Auto、MTP 或 DFlash2。提示词查找/后缀草稿不受此开关影响。">?</span></strong><small>控制 MTP / DFlash2 草稿器；关闭可释放显存</small></div><button class="st-toggle" id="mtpEnabled" aria-checked="false" aria-label="启用推测解码"></button></div>
           <div class="optional-body" id="mtpOptions">
+            <div class="field"><span class="label">草稿类型<span class="tip" data-tip="drafting：auto 自动选择；mtp 使用 MTP 草稿层；dflash2 使用 DFlash2（仅在支持的引擎/模型上生效，否则回退 MTP）。关闭总开关即 off。">?</span></span><select id="draftingMode"><option value="auto">Auto</option><option value="mtp">MTP</option><option value="dflash2">DFlash2</option></select><div class="hint" id="draftingHint">Auto 由引擎按显卡选择；DFlash2 不可用时回退 MTP</div></div>
             <div class="field" id="mtpPathField"><span class="label" id="mtpPathLabel">MTP 路径<span class="tip" data-tip="外部 MTP：填写 runtime 目录（需包含 experts.bin）。自带草稿的模型不需要路径，草稿数在下方设置。">?</span></span><div class="control-row" id="mtpControl"><input type="text" id="mtpPath" placeholder="...\\mtp\\rt"><button class="iconbtn" id="browseMtp" title="选择 MTP runtime 目录">…</button></div><div class="hint" id="mtpHint">MTP 未启用</div></div>
-            <div class="field"><span class="label" id="specLabel"><span id="specLabelText">投机窗口</span><span class="tip" id="specTip" data-tip="对应 --spec，MTP 推测窗口，常用 4；越大不一定越快。">?</span></span><input type="text" id="spec" placeholder="4"></div>
+            <div class="field" id="specField"><span class="label" id="specLabel"><span id="specLabelText">投机窗口</span><span class="tip" id="specTip" data-tip="对应 --spec，MTP 推测窗口，常用 4；越大不一定越快。">?</span></span><input type="text" id="spec" placeholder="4"></div>
             <div class="field" id="specMinPField"><span class="label">投机阈值<span class="tip" data-tip="对应 --spec-min-p，推测接受阈值，常用 0.5。">?</span></span><input type="text" id="specMinP" placeholder="0.5"></div>
+          </div>
           </div>
         </div>
 
         <div class="section">
-          <div class="section-title"><span>图片输入</span><span class="badge plain">可选</span></div>
+          <button class="adv-toggle section-toggle" data-target="sectionVision"><span>图片输入</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="sectionVision">
           <div class="field top"><span class="label">启用图片<span class="tip" data-tip="保留开关。当前缺少视觉编码器时不可用；安装后可启用。CPU 编码器省显存但较慢，GPU 更快但占用显存。">?</span></span><div><label class="checkline"><input type="checkbox" id="visionCheck"> 启用图片输入</label><div class="hint" id="visionNote">检测视觉组件…</div></div></div>
           <div class="optional-body" id="visionOptions">
-            <div class="field"><span class="label">图片运行位置<span class="tip" data-tip="CPU：不占显存，每张图可能慢几秒；GPU：更快，但会占用约 1 GB 以上显存。">?</span></span><select id="visionDevice"><option value="cpu">CPU（省显存）</option><option value="gpu">GPU（更快）</option></select><div class="hint" id="visionDeviceHint">CPU 编码不占显存；改用 GPU 需要重新编译 CUDA 版编码器。</div></div>
-            <div class="field"><span class="label">视觉 exe</span><input type="text" id="visionExe" placeholder="strata-vision.exe"></div>
+            <div class="field"><span class="label">图片运行位置<span class="tip" data-tip="CPU：不占显存，每张图可能慢几秒；GPU：更快，但会占用约 1 GB 以上显存。">?</span></span><select id="visionDevice"><option value="cpu">CPU（省显存）</option><option value="gpu">GPU（更快）</option></select><div class="hint" id="visionDeviceHint">CPU 编码不占显存；切换到 GPU 会自动使用 CUDA 版视觉编码器。</div></div>
+            <div class="field"><span class="label">视觉 exe<span class="tip" data-tip="GPU 模式需要 CUDA 版视觉编码器；CPU 模式使用 CPU 版。切换运行位置时会自动使用检测到的对应文件。">?</span></span><input type="text" id="visionExe" placeholder="strata-vision.exe"><div class="hint" id="visionExeHint">自动使用 GPU / CPU 版本</div></div>
             <div class="field"><span class="label">视觉 mmproj</span><input type="text" id="visionMmproj" placeholder="mmproj-*.gguf"></div>
             <div class="field"><span class="label">视觉最大 tokens<span class="tip" data-tip="每张图片最多编码成多少 token。越大细节越多，CPU 编码越慢；默认 768。">?</span></span><div class="control-row"><input type="number" id="visionMaxTokens" min="64" max="4096" step="64"><select id="visionMaxTokensPreset" style="width:100px"><option value="">预设</option><option value="256">256</option><option value="512">512</option><option value="768">768</option><option value="1024">1K</option><option value="2048">2K</option></select></div></div>
             <div class="field"><span class="label">视觉线程数<span class="tip" data-tip="CPU 编码器使用的线程数。默认 8；CPU 核心/线程较多时可提高。">?</span></span><input type="number" id="visionThreads" min="1" max="128" step="1"></div>
+            <div class="switch-line"><div class="copy"><strong>视觉按需释放<span class="tip" data-tip="vision.elastic：GPU 编码器在首张图片时启动，空闲后卸载，释放显存给专家缓存。CPU 编码器不适用。">?</span></strong><small>GPU 编码器按需启动和卸载</small></div><button class="st-toggle" id="visionElastic" aria-checked="false" aria-label="视觉按需释放"></button></div>
+            <div class="field"><span class="label">视觉空闲卸载<span class="tip" data-tip="vision.elastic_idle_s：空闲多少秒后卸载 GPU 编码器，默认 120。">?</span></span><div class="control-row"><input type="number" id="visionElasticIdleS" min="0" max="86400" step="1" placeholder="120"><span class="muted small">秒</span></div></div>
+            <div class="field"><span class="label">视觉弹性显存<span class="tip" data-tip="vision.elastic_mib：按需编码器可从专家缓存借用多少显存，默认 2048 MiB。">?</span></span><input type="number" id="visionElasticMib" min="128" max="16384" step="128" placeholder="2048 MiB"></div>
+            <div class="field"><span class="label">视觉最小 tokens<span class="tip" data-tip="vision.min_tokens：小图至少缩放到多少 token。Qwen-VL 定位任务常用 1024；普通图片可留空。">?</span></span><input type="number" id="visionMinTokens" min="0" max="4096" step="64" placeholder="0"></div>
+          </div>
           </div>
         </div>
 
         <div class="section">
-          <div class="section-title"><span>显存与内存</span></div>
+          <button class="adv-toggle section-toggle" data-target="sectionMemory"><span>显存与内存</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="sectionMemory">
           <div class="field"><span class="label">GPU</span><input type="text" id="gpu" placeholder="0 或 0,2"><div class="hint" id="gpuRolesHint"></div></div>
-          <div class="field"><span class="label">低内存模式<span class="tip" data-tip="mmap：专家从 SSD 读取；resident：专家复制到 RAM。RAM 不足时 mmap 更稳。">?</span></span><select id="lowRam"><option value="off">关闭</option><option value="mmap">mmap</option><option value="resident">resident</option></select></div>
+          <div class="field"><span class="label">低内存模式<span class="tip" data-tip="mmap：专家从 SSD 读取；预算缓存：只把最热 N GiB 复制到 RAM（推荐，和 mmap 搭配）；resident：尽量把所有专家复制到 RAM，需要足够物理内存和 commit。">?</span></span><select id="lowRam"><option value="off">关闭</option><option value="mmap">mmap</option><option value="budget">预算缓存</option><option value="resident">resident</option></select></div>
+          <div class="field"><span class="label">RAM 专家预算<span class="tip" data-tip="--resident-budget-gib：只把最热的 N GiB 专家复制到 RAM，其余从文件读取；隐含 mmap 并保留约 4 GiB 余量。使用时应选择“预算缓存”，不要选择 resident。">?</span></span><div class="control-row"><input type="number" id="residentBudgetGib" min="1" max="1024" step="1" placeholder="关闭"><span class="muted small">GiB</span></div><div class="hint" id="lowRamBudgetHint">预算缓存使用 mmap；与 resident 互斥</div></div>
           <div class="field"><span class="label">VRAM 保留<span class="tip" data-tip="对应 --vram-reserve-mib，为桌面/其他程序保留的显存 MiB；默认 1024，0 表示不额外保留。">?</span></span><input type="number" id="vramReserve" min="0"><span class="hint">默认 1024 MiB，降低显存不足导致的崩溃风险</span></div>
+          <button class="adv-toggle" data-target="advMemory"><span>高级显存与 RAM 参数</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="advMemory">
           <div class="field"><span class="label">Expert Cache<span class="tip" data-tip="对应 --expert-cache，显存中驻留的专家数量（slots/blobs）。auto 会按剩余显存自动调整；固定值不会自动缩小。">?</span></span><input type="text" id="expertCache" placeholder="auto"></div>
+          <div class="switch-line"><div class="copy"><strong>VRAM 弹性回收<span class="tip" data-tip="vram_elastic：把专家缓存按段分配，可通过 /v1/vram 在请求之间释放一部分显存给其它程序，之后恢复；未命中专家会改用 CPU，速度会下降。">?</span></strong><small>允许在请求之间分段释放显存</small></div><button class="st-toggle" id="vramElastic" aria-checked="false" aria-label="VRAM 弹性回收"></button></div>
+          <div class="field"><span class="label">弹性分段<span class="tip" data-tip="vram_segment_mib：VRAM 弹性回收的段大小，默认约 512 MiB。">?</span></span><input type="number" id="vramSegment" min="128" max="16384" step="128" placeholder="512 MiB"></div>
+          <div class="field"><span class="label">专家 Profile 保存<span class="tip" data-tip="expert_profile_save：把学习到的专家缓存顺序保存为文件，重启后优先从该 profile 恢复。留空关闭。">?</span></span><input type="text" id="expertProfileSave" placeholder="expert-profile-learned.bin"></div>
+          <div class="field"><span class="label">Profile 保存间隔<span class="tip" data-tip="expert_profile_save_every：运行中每隔多少分钟保存一次；0 表示只在干净退出时保存。">?</span></span><input type="number" id="expertProfileSaveEvery" min="0" max="10080" step="1" placeholder="10 分钟"></div>
+          <div class="field"><span class="label">CPU 专家线程<span class="tip" data-tip="--pool-workers：计算专家使用的 CPU 工作线程数；留空由引擎自动决定。大小核 CPU 可尝试减少。">?</span></span><input type="number" id="poolWorkers" min="1" max="256" step="1" placeholder="自动"></div>
+          <div class="field"><span class="label">PLE I/O<span class="tip" data-tip="--ple-io：n-gram 表读取方式。auto 由引擎决定；ram 需要足够内存，direct 绕过系统缓存，mmap 使用内存映射。">?</span></span><select id="pleIo"><option value="">自动</option><option value="direct">direct</option><option value="ram">ram</option><option value="mmap">mmap</option></select></div>
+          </div>
+          </div>
         </div>
 
         <div class="section">
-          <div class="section-title"><span>采样与思考</span><span class="badge plain">外部未指定时生效</span></div>
+          <button class="adv-toggle section-toggle" data-target="convCacheOptions"><span>会话缓存</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="convCacheOptions">
+            <div class="field"><span class="label">缓存预算<span class="tip" data-tip="--conversation-cache-mib：host RAM 中最多停放多少 MiB 会话 KV。留空由引擎自动计算；0 关闭。当前环境建议 3072 左右，用于容纳约 2.4–3.0 GB 的长会话快照。">?</span></span><input type="number" id="conversationCacheMib" min="0" max="32768" step="256" placeholder="自动（建议 3072）"></div>
+            <div class="field"><span class="label">缓存槽位<span class="tip" data-tip="--conversation-cache-slots：最多同时停放几个会话；默认 4。">?</span></span><input type="number" id="conversationCacheSlots" min="1" max="32" step="1" placeholder="4"></div>
+            <div class="field"><span class="label">最小空闲 RAM<span class="tip" data-tip="--conversation-cache-min-free-mib：低于该 RAM 余量时不再 park 会话，默认 2560 MiB。">?</span></span><input type="number" id="conversationCacheMinFree" min="0" max="65536" step="256" placeholder="2560"></div>
+            <div class="field"><span class="label">最小会话 tokens<span class="tip" data-tip="--conversation-cache-min-tokens：小于该 token 数的会话不 park，避免短请求挤掉长会话；默认 0。可点右侧 K 预设快速填写。">?</span></span><div class="control-row"><input type="number" id="conversationCacheMinTokens" min="0" max="1000000" step="1024" placeholder="0"><select id="conversationCacheMinTokensPreset" style="width:100px"><option value="">预设</option><option value="__clear__">不限</option><option value="1024">1K</option><option value="2048">2K</option><option value="4096">4K</option><option value="8192">8K</option><option value="16384">16K</option><option value="32768">32K</option><option value="65536">64K</option></select></div></div>
+            <div class="field"><span class="label">重新 park 增量<span class="tip" data-tip="--conversation-cache-park-gain：会话比已保存副本多推进多少 token 后才重新保存；留空/0 关闭该保护。可点右侧 K 预设快速填写。">?</span></span><div class="control-row"><input type="number" id="conversationCacheParkGain" min="0" max="1000000" step="1024" placeholder="0"><select id="conversationCacheParkGainPreset" style="width:100px"><option value="">预设</option><option value="__clear__">关闭</option><option value="1024">1K</option><option value="2048">2K</option><option value="4096">4K</option><option value="8192">8K</option><option value="16384">16K</option><option value="32768">32K</option></select></div></div>
+            <div class="hint">会话缓存占用系统 RAM，不占 VRAM；当前 1 GB 自动预算只能保存较小会话，长会话快照约 2.4–3.0 GB。</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <button class="adv-toggle section-toggle" data-target="advConcurrency"><span>并发与服务</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="advConcurrency">
+          <div class="field"><span class="label">Parallel<span class="tip" data-tip="parallel：引擎批处理 slot 数，1 表示一次一个请求；2–8 可并行。显存和状态缓存会相应增加。">?</span></span><input type="number" id="parallel" min="1" max="8" step="1" placeholder="1"></div>
+          <div class="field"><span class="label">最大排队<span class="tip" data-tip="max_queue：等待空闲 slot 的最大请求数；0 表示只允许正在运行的请求。">?</span></span><input type="number" id="maxQueue" min="0" max="4096" step="1" placeholder="不限制"></div>
+          <div class="field"><span class="label">排队超时<span class="tip" data-tip="queue_timeout：请求在队列中等待的秒数，0.1–600；设置前必须先设置最大排队。">?</span></span><input type="number" id="queueTimeout" min="0.1" max="600" step="0.1" placeholder="无超时"></div>
+          <div class="field"><span class="label">引擎就绪超时<span class="tip" data-tip="engine_ready_s：启动模型后等待 READY 的秒数，默认 900；超大模型可调高。">?</span></span><input type="number" id="engineReadyS" min="1" max="86400" step="1" placeholder="900"></div>
+          <div class="hint">slot_save_path 与 parallel 不兼容；batch_telemetry 只用于诊断，暂未纳入。</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <button class="adv-toggle section-toggle" data-target="advAgent"><span>Agent / 工具调用</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="advAgent">
+          <div class="switch-line"><div class="copy"><strong>回答预留<span class="tip" data-tip="answer_room：思考开启且没有预算、max_tokens≥1024 时，在剩余四分之一（至少 512 token）时收束思考，给最终回答留空间。关闭后思考可能耗尽输出上限。">?</span></strong><small>思考结束前为回答预留空间</small></div><button class="st-toggle" id="answerRoom" aria-checked="true" aria-label="回答预留"></button></div>
+          <div class="switch-line"><div class="copy"><strong>思考闭合重试<span class="tip" data-tip="reasoning_close_retry：回复停在思考标签内且没有回答/工具调用时，自动闭合一次并继续。默认关闭。">?</span></strong><small>思考未闭合时自动补一次</small></div><button class="st-toggle" id="reasoningCloseRetry" aria-checked="false" aria-label="思考闭合重试"></button></div>
+          <div class="field"><span class="label">思考循环恢复<span class="tip" data-tip="reasoning_loop_recovery：检测到整段重复思考时，off 不处理；stop 直接结束；recover 从当前输出继续一次。可能误判重复的有用代码。">?</span></span><select id="reasoningLoopRecovery"><option value="off">关闭</option><option value="stop">停止</option><option value="recover">恢复一次</option></select></div>
+          <div class="field"><span class="label">重复停止 token<span class="tip" data-tip="repeat_stop_tokens：同一 token 连续重复达到该次数时以 length 结束；默认 256，0 关闭。">?</span></span><input type="number" id="repeatStopTokens" min="0" max="1000000" step="1" placeholder="256"></div>
+          <div class="switch-line"><div class="copy"><strong>工具调用恢复<span class="tip" data-tip="tool_call_recovery：读取模型写出的非标准但已声明的工具调用格式，例如 <parameter=...>、<tool_call> 中的 JSON、<function=...>。默认开启；只恢复请求声明过的工具。">?</span></strong><small>兼容非标准工具调用写法</small></div><button class="st-toggle" id="toolCallRecovery" aria-checked="true" aria-label="工具调用恢复"></button></div>
+          <div class="field"><span class="label">思考强度位置<span class="tip" data-tip="effort_position：start 把 low/medium 强度放在开头；end 放在回答前的短系统消息中，便于复用前缀缓存，但模型对 end 位置的遵循度未充分测量。">?</span></span><select id="effortPosition"><option value="start">开头（start）</option><option value="end">回答前（end）</option></select></div>
+          <div class="field"><span class="label">Anthropic 思考<span class="tip" data-tip="anthropic_thinking：model 按模板决定；on_request 让没有请求思考的 /v1/messages 请求保持不思考，适合 Claude Code 的短辅助调用。">?</span></span><select id="anthropicThinking"><option value="model">按模板（model）</option><option value="on_request">按请求（on_request）</option></select></div>
+          <div class="switch-line"><div class="copy"><strong>Codex 线程标题<span class="tip" data-tip="codex_thread_titles：让 Codex 的线程标题请求由服务端直接回答，保留对话缓存。默认关闭。">?</span></strong><small>不调用引擎生成标题</small></div><button class="st-toggle" id="codexThreadTitles" aria-checked="false" aria-label="Codex 线程标题"></button></div>
+          <div class="switch-line"><div class="copy"><strong>Codex 压缩缓存<span class="tip" data-tip="codex_compaction_cache：Codex 压缩对话时沿用原对话的工具和前缀缓存，减少重复读取。默认关闭。">?</span></strong><small>压缩时复用对话缓存</small></div><button class="st-toggle" id="codexCompactionCache" aria-checked="false" aria-label="Codex 压缩缓存"></button></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <button class="adv-toggle section-toggle" data-target="sectionSampling"><span>采样与思考</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="sectionSampling">
           <div class="field"><span class="label">默认思考强度<span class="tip" data-tip="对应 reasoning_effort。none 最快，low/medium 保留部分思考，high 为模型默认；留空不覆盖。">?</span></span><select id="reasoningEffort"><option value="">模型默认</option><option value="none">none</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></div>
           <div class="field"><span class="label">Temperature<span class="tip" data-tip="0 = 贪心；数值越高越发散。范围 0–2。留空使用模型卡默认。">?</span></span><input type="number" id="temperature" min="0" max="2" step="0.05" placeholder="模型默认"></div>
           <div class="field"><span class="label">Top P<span class="tip" data-tip="核采样阈值，范围 0–1。留空使用模型卡默认。">?</span></span><input type="number" id="topP" min="0" max="1" step="0.01" placeholder="模型默认"></div>
           <div class="field"><span class="label">Top K<span class="tip" data-tip="每步保留的候选数，范围 1–64。留空使用模型卡默认。">?</span></span><input type="number" id="topK" min="1" max="64" step="1" placeholder="模型默认"></div>
+          <button class="adv-toggle" data-target="advSampling"><span>高级采样与惩罚</span><span class="chev"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></span></button>
+          <div class="adv-body" id="advSampling">
+          <div class="field"><span class="label">Min P<span class="tip" data-tip="min_p：低于最高概率 min_p 比例的 token 会被剔除，范围 0–1；0 为关闭。留空使用模型默认。">?</span></span><input type="number" id="minP" min="0" max="1" step="0.01" placeholder="模型默认"></div>
           <div class="field"><span class="label">存在惩罚<span class="tip" data-tip="presence_penalty：对已经出现过的 token 施加惩罚，减少重复。范围 0–4，0 为关闭；量化模型重复明显时可尝试 1.0–1.5。留空使用模型默认。">?</span></span><input type="number" id="presencePenalty" min="0" max="4" step="0.05" placeholder="模型默认"></div>
+          <div class="field"><span class="label">频率惩罚<span class="tip" data-tip="frequency_penalty：按 token 出现频率施加惩罚，范围 0–4，0 为关闭。留空使用模型默认。">?</span></span><input type="number" id="frequencyPenalty" min="0" max="4" step="0.05" placeholder="模型默认"></div>
           <div class="field"><span class="label">重复惩罚<span class="tip" data-tip="repetition_penalty：对最近 token 的重复进行惩罚，1 为关闭。常见范围 1.05–1.2；过高会让输出变得生硬。留空使用模型默认。">?</span></span><input type="number" id="repetitionPenalty" min="0.01" max="4" step="0.01" placeholder="1 = 关闭"></div>
+          <div class="field"><span class="label">惩罚窗口<span class="tip" data-tip="penalty_last_n（别名 repeat_last_n）：惩罚统计最近多少个 token；留空使用默认窗口，0 表示不统计历史。">?</span></span><input type="number" id="penaltyLastN" min="0" max="1000000" step="1" placeholder="默认窗口"></div>
           <div class="field"><span class="label">Seed<span class="tip" data-tip="正整数，用于可复现采样；留空表示随机。">?</span></span><input type="number" id="seed" min="1" step="1" placeholder="留空（随机）"></div>
+          </div>
           <div class="field"><span class="label">Max Tokens<span class="tip" data-tip="默认输出上限，写入 Strata Chat 的 shared settings，仅对未指定 max_tokens 的客户端生效；请求显式发送 max_tokens 时以请求为准。不限 = 不设置默认输出上限，实际生成长度仍受上下文和 Fit Max Tokens 限制。">?</span></span><div class="control-row"><input type="number" id="maxTokens" min="1" step="1" placeholder="留空=不设默认"><select id="maxTokensPreset" style="width:100px"><option value="">预设</option><option value="__clear__">不限</option><option value="2048">2K</option><option value="4096">4K</option><option value="8192">8K</option><option value="16384">16K</option><option value="32768">32K</option><option value="65536">64K</option></select></div></div>
           <div class="field"><span class="label">Reasoning Budget<span class="tip" data-tip="对应 reasoning_budget_tokens：思考阶段最多使用的 token 数，0 表示不限制。思考预算计入输出 tokens；请求自身指定时以请求为准。留空表示不设置默认。">?</span></span><div class="control-row"><input type="number" id="reasoningBudget" min="0" max="1000000" step="1" placeholder="留空=不设默认"><select id="reasoningBudgetPreset" style="width:100px"><option value="">预设</option><option value="0">不限</option><option value="2048">2K</option><option value="4096">4K</option><option value="8192">8K</option><option value="16384">16K</option><option value="32768">32K</option><option value="65536">64K</option></select></div></div>
           <div class="switch-line" style="padding-top:2px"><div class="copy"><strong>Fit Max Tokens</strong><small>prompt + max_tokens 超出上下文时自动缩短输出，而不是返回 400；推荐开启，重启后生效</small></div><button class="st-toggle" id="fitMaxTokens" aria-checked="false" aria-label="Fit Max Tokens"></button></div>
           <div class="hint">这些是运行配置的默认值；外部调用在请求中指定 temperature / top_p / top_k / seed / reasoning_effort 时，以请求值为准。</div>
+          </div>
         </div>
       </div>
 
@@ -178,6 +245,7 @@
           <div class="field"><span class="label">监听地址<span class="tip" data-tip="模型 API 的监听地址。远程客户端访问时请设置 API Key。">?</span></span><select id="host"><option>127.0.0.1</option><option>0.0.0.0</option></select></div>
           <div class="field"><span class="label">端口</span><input type="number" id="port" min="1" max="65535"></div>
           <div class="field"><span class="label">模型名<span class="tip" data-tip="写入 API 的 model 名称，客户端可以用它或别名调用。">?</span></span><div class="control-row"><input type="text" id="modelName"><button class="st-btn st-btn--secondary st-btn--sm" id="copyModelBtn">复制</button></div></div>
+          <div class="field"><span class="label">模型别名<span class="tip" data-tip="aliases：逗号分隔的额外 model 名称，会出现在 /v1/models；llama-swap 导出也会使用。">?</span></span><input type="text" id="modelAliases" placeholder="qwen, local-model"></div>
           <div class="field"><span class="label">API Key<span class="tip" data-tip="模型客户端的密钥，独立于控制台。留空表示保持现有密钥；本机使用允许重复复制。">?</span></span><div><div class="control-row"><input type="password" id="apiKey" autocomplete="new-password"></div><div class="control-row" style="margin-top:6px"><button class="st-btn st-btn--secondary st-btn--sm" id="genKey">生成 sk-strata-*</button><button class="st-btn st-btn--secondary st-btn--sm" id="copyKeyBtn">复制</button><button class="st-btn st-btn--secondary st-btn--sm" id="clearKey">清除</button></div><div class="hint" id="keyState">未设置</div></div></div>
         </div>
         <div class="lan-extra" id="lanExtra">
@@ -221,12 +289,23 @@
         </div>
         <div class="section">
           <div class="section-title"><span>维护</span><span class="badge plain">只读</span></div>
+          <div class="notice warn" id="userArgsNotice" hidden>
+            <strong>检测到 user_args。</strong>
+            <span id="userArgsText"></span>
+            <div style="margin-top:8px"><button class="st-btn st-btn--secondary st-btn--sm" id="mergeUserArgsBtn">合并到配置</button></div>
+          </div>
           <div class="button-grid"><button class="st-btn st-btn--secondary st-btn--sm" id="commandBtn">查看启动命令</button><button class="st-btn st-btn--secondary st-btn--sm" id="openConfigBtn2">打开配置</button></div>
+          <div class="button-grid" style="margin-top:8px"><button class="st-btn st-btn--secondary st-btn--sm" id="exportLlamaSwapBtn">导出 llama-swap</button></div>
+          <div class="hint">导出当前 Strata 模型，默认使用当前服务端口；如与其它模型冲突，请把 cmd 和 proxy 中的端口改为 <span class="mono">${PORT}</span>。</div>
         </div>
       </div>
     </div>
     <div class="settings-foot">
-      <button class="st-btn st-btn--secondary" id="saveBtn">保存配置</button>
+      <div class="save-split" id="saveSplit">
+        <button class="st-btn st-btn--secondary save-main" id="saveBtn">保存配置</button>
+        <button class="st-btn st-btn--secondary save-menu-btn" id="saveMenuBtn" aria-haspopup="menu" aria-expanded="false" title="更多保存选项"><svg class="st-icon st-icon--sm"><use href="#i-chevron"/></svg></button>
+        <div class="save-menu" id="saveMenu" hidden><button class="save-menu-item" id="saveAsBtn">另存为…</button></div>
+      </div>
       <button class="st-btn st-btn--primary" id="startBtn" title="启动模型服务；启动模式为预加载时会同时加载模型，延迟加载则在首个请求时加载">启动服务</button>
     </div>
   </aside>
@@ -248,6 +327,7 @@
           <div class="st-card"><div class="muted small">服务</div><div class="value" id="serviceState">未启动</div><div class="sub" id="serviceSub">—</div></div>
           <div class="st-card"><div class="muted small">模型</div><div class="value" id="modelState">—</div><div class="sub" id="modelSub">—</div></div>
           <div class="st-card"><div class="muted small">上下文</div><div class="value" id="ctxValue">—</div><div class="st-progress" style="margin-top:8px"><div class="st-progress__bar" id="ctxBar" style="width:0%"></div></div><div class="sub" id="ctxSub">—</div></div>
+          <div class="st-card"><div class="muted small">会话缓存</div><div class="value" id="convValue">—</div><div class="st-progress" style="margin-top:8px"><div class="st-progress__bar" id="convBar" style="width:0%"></div></div><div class="sub" id="convSub">—</div></div>
         </div>
         <div class="st-card live">
           <div class="live-top"><span class="badge" id="liveState">空闲</span><strong id="liveTokens">—</strong><span class="muted small" id="liveElapsed"></span><span class="live-speed" id="liveSpeed">—</span></div>
@@ -267,7 +347,7 @@
         <div class="monitor-row">
           <div class="st-card req-card">
             <div class="req-head"><span class="card-title">最近请求</span><span class="muted small" id="reqSummary">—</span></div>
-            <div class="table-wrap"><table class="st-table"><thead><tr><th>时间</th><th>模型</th><th>状态</th><th class="num">Prompt</th><th class="num" title="提示词/对话缓存复用的 token 数">复用</th><th class="num">输出</th><th class="num">预填 t/s</th><th class="num">解码 t/s</th><th class="num" title="显存中的专家缓存命中率">专家命中</th><th class="num" title="草稿接受率：accepted / offered">草稿接受</th><th class="num">耗时</th></tr></thead><tbody id="reqBody"><tr><td colspan="11" class="muted">暂无请求</td></tr></tbody></table></div>
+            <div class="table-wrap"><table class="st-table"><thead><tr><th>时间</th><th>模型</th><th class="num" title="并行请求使用的引擎 slot">Slot</th><th>状态</th><th class="num">Prompt</th><th class="num" title="提示词/对话缓存复用的 token 数">复用</th><th class="num">输出</th><th class="num">预填 t/s</th><th class="num">解码 t/s</th><th class="num" title="显存中的专家缓存命中率">专家命中</th><th class="num" title="草稿接受率：accepted / offered">草稿接受</th><th class="num">耗时</th></tr></thead><tbody id="reqBody"><tr><td colspan="12" class="muted">暂无请求</td></tr></tbody></table></div>
             <div class="footer-note"><span id="reqTotals"></span><span id="stateUpdated"></span></div>
           </div>
         </div>
@@ -284,7 +364,7 @@
       <div class="panel" id="panel-requests">
         <div class="notice info"><strong>请求元数据会跨会话保存。</strong> 控制台保存最近 500 条请求的耗时、吞吐、专家命中率等元数据，重启后仍可对比。启用 <span class="mono">api_monitor</span> 后，可在官方 /api-monitor 页面查看请求内容；会增加服务器内存占用。</div>
         <div class="requests-layout">
-          <div><div class="req-head" style="margin-bottom:8px"><span class="card-title">请求列表</span><span class="muted small" id="reqTabSummary">—</span></div><div class="table-wrap req-list-scroll"><table class="st-table"><thead><tr><th>时间</th><th>模型</th><th>端点</th><th>状态</th><th class="num">Prompt</th><th class="num">输出</th><th class="num" title="草稿接受率：accepted / offered">草稿接受</th><th class="num">耗时</th></tr></thead><tbody id="reqTabBody"><tr><td colspan="8" class="muted">暂无请求</td></tr></tbody></table></div></div>
+          <div><div class="req-head" style="margin-bottom:8px"><span class="card-title">请求列表</span><span class="muted small" id="reqTabSummary">—</span></div><div class="table-wrap req-list-scroll"><table class="st-table"><thead><tr><th>时间</th><th>模型</th><th class="num" title="并行请求使用的引擎 slot">Slot</th><th>端点</th><th>状态</th><th class="num">Prompt</th><th class="num">输出</th><th class="num" title="草稿接受率：accepted / offered">草稿接受</th><th class="num">耗时</th></tr></thead><tbody id="reqTabBody"><tr><td colspan="9" class="muted">暂无请求</td></tr></tbody></table></div></div>
           <div class="detail" id="requestDetail"><div class="empty"><b>选择一条请求</b><br><br>默认只有元数据。<br>启用 api_monitor 后可查看输入、输出与推理内容。</div></div>
         </div>
         <div class="req-head" style="margin-top:14px"><span class="card-title">api_monitor</span><span class="badge plain" id="apiMonitorState">默认关闭</span></div>
@@ -299,5 +379,3 @@
 <div class="modal-backdrop" id="modalBackdrop" hidden><div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><span class="card-title" id="modalTitle">对话框</span><button class="st-btn st-btn--icon" id="modalClose" aria-label="关闭">×</button></div><div class="modal-body" id="modalBody"></div><div class="modal-foot" id="modalFoot"></div></div></div>
 </body>
 </html>
-
-

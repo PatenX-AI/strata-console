@@ -192,6 +192,7 @@ function buildForm() {
   return {
     data_dir: value("dataDir"),
     model_name: value("modelName"),
+    aliases: value("modelAliases"),
     exe: value("exePath"),
     native: value("ggufPath"),
     ple: value("plePath"),
@@ -207,20 +208,37 @@ function buildForm() {
     vision_mmproj: value("visionMmproj"),
     vision_max_tokens: numberValue("visionMaxTokens", 768),
     vision_threads: numberValue("visionThreads", 8),
+    vision_elastic: isOn("visionElastic"),
+    vision_elastic_idle_s: value("visionElasticIdleS"),
+    vision_elastic_mib: value("visionElasticMib"),
+    vision_min_tokens: value("visionMinTokens"),
     idle_unload_min: numberValue("idleUnload", 60),
     reasoning_effort: value("reasoningEffort"),
     reasoning_budget_tokens: value("reasoningBudget"),
     temperature: value("temperature"),
     top_p: value("topP"),
     top_k: value("topK"),
+    min_p: value("minP"),
     presence_penalty: value("presencePenalty"),
+    frequency_penalty: value("frequencyPenalty"),
     repetition_penalty: value("repetitionPenalty"),
+    penalty_last_n: value("penaltyLastN"),
     seed: value("seed"),
     max_tokens: value("maxTokens"),
     fit_max_tokens: isOn("fitMaxTokens"),
+    answer_room: isOn("answerRoom"),
+    reasoning_close_retry: isOn("reasoningCloseRetry"),
+    reasoning_loop_recovery: value("reasoningLoopRecovery"),
+    repeat_stop_tokens: value("repeatStopTokens"),
+    tool_call_recovery: isOn("toolCallRecovery"),
+    effort_position: value("effortPosition"),
+    anthropic_thinking: value("anthropicThinking"),
+    codex_thread_titles: isOn("codexThreadTitles"),
+    codex_compaction_cache: isOn("codexCompactionCache"),
     low_ram: value("lowRam"),
     gpu: value("gpu"),
     mtp: isOn("mtpEnabled"),
+    drafting: value("draftingMode"),
     mtp_path: value("mtpPath"),
     spec: value("spec"),
     spec_min_p: value("specMinP"),
@@ -228,6 +246,22 @@ function buildForm() {
     expert_cache: value("expertCache"),
     kv_resident: value("kvResident"),
     vram_reserve: numberValue("vramReserve", 0),
+    vram_elastic: isOn("vramElastic"),
+    vram_segment_mib: value("vramSegment"),
+    conversation_cache_mib: value("conversationCacheMib"),
+    conversation_cache_slots: value("conversationCacheSlots"),
+    conversation_cache_min_free_mib: value("conversationCacheMinFree"),
+    conversation_cache_min_tokens: value("conversationCacheMinTokens"),
+    conversation_cache_park_gain: value("conversationCacheParkGain"),
+    expert_profile_save: value("expertProfileSave"),
+    expert_profile_save_every: value("expertProfileSaveEvery"),
+    resident_budget_gib: value("residentBudgetGib"),
+    pool_workers: value("poolWorkers"),
+    ple_io: value("pleIo"),
+    parallel: value("parallel"),
+    max_queue: value("maxQueue"),
+    queue_timeout: value("queueTimeout"),
+    engine_ready_s: value("engineReadyS"),
     host: value("host"),
     port: numberValue("port", 8080),
     api_key: value("apiKey"),
@@ -355,6 +389,8 @@ function fillConfig(payload) {
     : "未找到模型，请选择 Strata-data 根目录";
 
   setField("modelName", v.model_name);
+  setField("modelAliases", v.aliases || "");
+  updateUserArgsNotice(v.user_args);
   setField("ggufPath", v.native);
   setField("packPath", v.pack);
   setField("plePath", v.ple);
@@ -366,6 +402,7 @@ function fillConfig(payload) {
   setField("kvSelect", v.kv || "int8");
   setField("idleUnload", v.idle_unload_min ?? 60);
   setField("lowRam", v.low_ram || "off");
+  updateLowRamUi();
   setField("gpu", v.gpu || "");
   $("gpu").disabled = !!v.gpu_roles_active;
   if (v.gpu_roles_active) {
@@ -377,6 +414,7 @@ function fillConfig(payload) {
   }
   setToggle("mtpEnabled", v.mtp);
   const nativeMtp = !!v.mtp_native;
+  setField("draftingMode", v.drafting && v.drafting !== "off" ? v.drafting : "auto");
   $("mtpPathLabel").style.display = nativeMtp ? "none" : "";
   $("mtpControl").style.display = nativeMtp ? "none" : "";
   $("mtpPath").placeholder = "...\\mtp\\rt";
@@ -389,6 +427,7 @@ function fillConfig(payload) {
     ? "模型自带草稿：这里写 --mtp N 的草稿数，即每一步推测解码中 MTP 头提议的 token 数。范围 1–7，常用 2–3。"
     : "对应 --spec，MTP 推测窗口，常用 4；越大不一定越快。";
   $("spec").placeholder = nativeMtp ? "2" : "4";
+  $("specField").style.display = nativeMtp ? "none" : "";
   $("specMinPField").style.display = nativeMtp ? "none" : "";
   updateMtpHint();
   setField("spec", nativeMtp
@@ -399,22 +438,63 @@ function fillConfig(payload) {
   setField("expertCache", v.expert_cache || "");
   setField("kvResident", v.kv_resident || "");
   setField("vramReserve", v.vram_reserve || 0);
+  setToggle("vramElastic", v.vram_elastic);
+  setField("vramSegment", v.vram_segment_mib ?? "");
+  setField("conversationCacheMib", v.conversation_cache_mib || "");
+  setField("conversationCacheSlots", v.conversation_cache_slots || "");
+  setField("conversationCacheMinFree", v.conversation_cache_min_free_mib || "");
+  setField("conversationCacheMinTokens", v.conversation_cache_min_tokens || "");
+  setField("conversationCacheParkGain", v.conversation_cache_park_gain || "");
+  setField("expertProfileSave", v.expert_profile_save || "");
+  setField("expertProfileSaveEvery", v.expert_profile_save_every ?? "");
+  setField("residentBudgetGib", v.low_ram === "resident" ? "" : (v.resident_budget_gib || ""));
+  updateLowRamUi();
+  setField("poolWorkers", v.pool_workers || "");
+  setField("pleIo", v.ple_io || "");
+  setField("parallel", v.parallel ?? 1);
+  setField("maxQueue", v.max_queue ?? "");
+  setField("queueTimeout", v.queue_timeout ?? "");
+  setField("engineReadyS", v.engine_ready_s ?? "");
   setField("visionCheck", v.vision);
   setField("visionDevice", v.vision_gpu ? "gpu" : "cpu");
   setField("visionExe", v.vision_exe || "");
+  {
+    const desired = v.vision_gpu ? v.vision_exe_gpu : v.vision_exe_cpu;
+    if (desired && (!v.vision_exe || v.vision_exe === v.vision_exe_gpu || v.vision_exe === v.vision_exe_cpu))
+      setField("visionExe", desired);
+    const hint = $("visionExeHint");
+    if (hint) hint.textContent = v.vision_exe_gpu && v.vision_exe_cpu
+      ? "自动使用 GPU / CPU 版本" : "只检测到一个视觉编码器版本";
+  }
   setField("visionMmproj", v.vision_mmproj || "");
   setField("visionMaxTokens", v.vision_max_tokens || 768);
   setField("visionThreads", v.vision_threads || 8);
+  setToggle("visionElastic", v.vision_elastic);
+  setField("visionElasticIdleS", v.vision_elastic_idle_s ?? 120);
+  setField("visionElasticMib", v.vision_elastic_mib ?? 2048);
+  setField("visionMinTokens", v.vision_min_tokens ?? 0);
   setField("reasoningEffort", v.reasoning_effort || "");
   setField("reasoningBudget", v.reasoning_budget_tokens ?? "");
   setField("temperature", v.temperature ?? "");
   setField("topP", v.top_p ?? "");
   setField("topK", v.top_k ?? "");
+  setField("minP", v.min_p ?? "");
   setField("presencePenalty", v.presence_penalty ?? "");
+  setField("frequencyPenalty", v.frequency_penalty ?? "");
   setField("repetitionPenalty", v.repetition_penalty ?? "");
+  setField("penaltyLastN", v.penalty_last_n ?? "");
   setField("seed", v.seed ?? "");
   setField("maxTokens", v.max_tokens || "");
   setToggle("fitMaxTokens", v.fit_max_tokens);
+  setToggle("answerRoom", v.answer_room !== false);
+  setToggle("reasoningCloseRetry", v.reasoning_close_retry);
+  setField("reasoningLoopRecovery", v.reasoning_loop_recovery || "off");
+  setField("repeatStopTokens", v.repeat_stop_tokens ?? 256);
+  setToggle("toolCallRecovery", v.tool_call_recovery !== false);
+  setField("effortPosition", v.effort_position || "start");
+  setField("anthropicThinking", v.anthropic_thinking || "model");
+  setToggle("codexThreadTitles", v.codex_thread_titles);
+  setToggle("codexCompactionCache", v.codex_compaction_cache);
   setField("startMode", v.start_mode || "preload");
   setField("backupCount", v.backup_count || 5);
   setField("host", v.host || "127.0.0.1");
@@ -489,6 +569,16 @@ function fillConfig(payload) {
   renderWarnings(v.warnings || []);
 }
 
+function updateUserArgsNotice(userArgs) {
+  const box = $("userArgsNotice");
+  if (!box) return;
+  const args = Array.isArray(userArgs) ? userArgs : [];
+  box.hidden = args.length === 0;
+  if (args.length) {
+    $("userArgsText").innerHTML = `<span class="mono">${esc(args.join(" "))}</span>`;
+  }
+}
+
 function apiBaseUrl() {
   const port = numberValue("port", 8080);
   const on = isOn("lanToggle");
@@ -512,19 +602,55 @@ function updateVisionNote() {
     el.textContent = "缺少视觉编码器；请在高级性能中指定 exe 和 mmproj。";
     el.className = "hint warn";
   } else if (value("visionDevice") === "gpu") {
-    el.textContent = "将使用 GPU 编码；需要 CUDA 版 strata-vision，保存并重启后生效。";
-    el.className = "hint warn";
+    el.textContent = "将使用 GPU 编码；自动选用检测到的 CUDA 版视觉编码器，保存并重启后生效。";
+    el.className = "hint ok";
   } else {
     el.textContent = "视觉组件已启用：CPU 编码（不占显存，单图较慢）";
     el.className = "hint ok";
   }
 }
 
+function updateLowRamUi() {
+  const resident = value("lowRam") === "resident";
+  const budget = $("residentBudgetGib");
+  const hint = $("lowRamBudgetHint");
+  if (budget) budget.disabled = resident;
+  if (hint) {
+    if (resident) hint.textContent = "resident 模式会尽量把全部专家放入 RAM，不使用预算";
+    else if (value("lowRam") === "budget") hint.textContent = "预算缓存 = mmap + 只复制最热 N GiB 专家";
+    else if (value("residentBudgetGib")) hint.textContent = "填写预算会自动切换到“预算缓存”模式";
+    else hint.textContent = "预算缓存使用 mmap；与 resident 互斥";
+  }
+}
+
+function syncVisionExe() {
+  const v = state.payload?.view || {};
+  const gpu = value("visionDevice") === "gpu";
+  const desired = gpu ? v.vision_exe_gpu : v.vision_exe_cpu;
+  const cur = value("visionExe");
+  if (desired && (!cur || cur === v.vision_exe_gpu || cur === v.vision_exe_cpu))
+    setField("visionExe", desired);
+  const hint = $("visionExeHint");
+  if (hint) hint.textContent = v.vision_exe_gpu && v.vision_exe_cpu
+    ? "自动使用 GPU / CPU 版本" : "只检测到一个视觉编码器版本";
+}
+
 function updateOptionalVisibility() {
   const mtp = $("mtpOptions");
   if (mtp) mtp.classList.toggle("open", isOn("mtpEnabled"));
   const vision = $("visionOptions");
-  if (vision) vision.classList.toggle("open", !!$("visionCheck")?.checked);
+  const visionOn = !!$("visionCheck")?.checked;
+  if (vision) vision.classList.toggle("open", visionOn);
+  const gpu = value("visionDevice") === "gpu";
+  const visionElastic = isOn("visionElastic");
+  for (const id of ["visionElastic", "visionElasticIdleS", "visionElasticMib"]) {
+    const el = $(id);
+    if (el) el.disabled = !visionOn || !gpu || (id !== "visionElastic" && !visionElastic);
+  }
+  const minTokens = $("visionMinTokens");
+  if (minTokens) minTokens.disabled = !visionOn;
+  const vramSegment = $("vramSegment");
+  if (vramSegment) vramSegment.disabled = !isOn("vramElastic");
 }
 
 function updateMtpHint() {
@@ -573,17 +699,20 @@ function updateVisionHint(showToast = false) {
   const ready = !!(value("visionExe") && value("visionMmproj"));
   const free = state.live?.status?.metrics?.engine?.vram_free_mib;
   if (!ready) {
-    el.textContent = "需要视觉 exe 与 mmproj；GPU 编码还需要 CUDA 版 strata-vision。";
+    el.textContent = "需要视觉 exe 与 mmproj；GPU 模式会自动使用检测到的 CUDA 版视觉编码器。";
     el.className = "hint warn";
     return;
   }
   if (gpu) {
     const freeText = free != null ? `当前显存剩余约 ${fmt(free)} MiB。` : "";
-    el.textContent = `GPU 编码需要重新编译 CUDA 版 strata-vision（当前是 CPU 构建）。${freeText}GPU 编码约需 1.4 GB 显存，建议降低上下文/专家缓存或继续使用 CPU。`;
-    el.className = "hint warn";
-    if (showToast) toast("GPU 编码需要 CUDA 版 strata-vision；当前编码器是 CPU 构建", "warn", 7000);
+    const hasGpu = !!state.payload?.view?.vision_exe_gpu;
+    el.textContent = hasGpu
+      ? `GPU 编码将使用 CUDA 版视觉编码器。${freeText}按需释放开启时，首图启动、空闲后卸载。`
+      : `未检测到 CUDA 版视觉编码器；请先安装或编译 GPU 版 vision。${freeText}`;
+    el.className = hasGpu ? "hint ok" : "hint warn";
+    if (showToast) toast(hasGpu ? "GPU 视觉编码器已检测到" : "未检测到 CUDA 版视觉编码器", hasGpu ? "ok" : "warn", 7000);
   } else {
-    el.textContent = "当前使用 CPU 编码，不占显存；单张图片约数秒。改用 GPU 需重新编译 CUDA 版。";
+    el.textContent = "当前使用 CPU 编码，不占显存；单张图片约数秒。切换到 GPU 会自动改用 CUDA 版视觉编码器。";
     el.className = "hint ok";
   }
 }
@@ -738,6 +867,35 @@ function render(s) {
   $("ctxBar").style.width = `${frac}%`;
   setText("ctxSub", last ? `最近请求 ${fmt(last.prompt_tokens)} prompt · ${fmt(last.output_tokens)} output` : "暂无请求");
 
+  const hasConvCache = m.conversation_cache && typeof m.conversation_cache === "object";
+  const cc = hasConvCache ? m.conversation_cache : {};
+  const ccEnabled = !!cc.enabled;
+  const ccBudget = Number(cc.budget_mib || 0);
+  const ccBytes = Number(cc.bytes || 0);
+  const ccParked = Number(cc.parked || 0);
+  const ccSlots = Number(cc.slots || 0);
+  if (!h.loaded) {
+    setText("convValue", "—");
+    $("convBar").style.width = "0%";
+    setText("convSub", "服务未加载");
+  } else if (!hasConvCache) {
+    setText("convValue", "—");
+    $("convBar").style.width = "0%";
+    setText("convSub", "等待指标");
+  } else if (ccEnabled) {
+    setText("convValue", `${fmt(ccParked)}${ccSlots ? ` / ${fmt(ccSlots)}` : ""}`);
+    const ccPct = ccBudget > 0 ? pct(ccBytes / 1048576, ccBudget) : 0;
+    $("convBar").style.width = `${ccPct}%`;
+    tone($("convBar"), ccPct);
+    const usedMib = ccBytes / 1048576;
+    const budgetText = ccBudget > 0 ? `${fmt(usedMib, 0)} / ${fmt(ccBudget)} MiB` : `${fmt(usedMib, 0)} MiB`;
+    setText("convSub", `${budgetText} · ${fmt(cc.restores)} 恢复`);
+  } else {
+    setText("convValue", "关闭");
+    $("convBar").style.width = "0%";
+    setText("convSub", "会话缓存未启用");
+  }
+
   renderLive(live, last);
   renderMetrics(hw, hs, eng, m, cv);
   renderRequests(m.requests || [], m.totals || null, m);
@@ -859,19 +1017,29 @@ function draftRateText(t) {
   return ` \u00b7 \u8349\u7a3f\u63a5\u53d7 ${pct.toFixed(1)}%`;
 }
 
+function slotLabel(r) {
+  if (r.slot != null) return `slot${r.slot}`;
+  const parallel = Number(state.payload?.view?.parallel ?? 1);
+  return parallel <= 1 ? "slot0" : "\u2014";
+}
+
+function slotCell(r) {
+  return slotLabel(r);
+}
+
 function requestRows(reqs, details) {
-  if (!reqs.length) return `<tr><td colspan="${details ? 8 : 11}" class="muted">暂无请求</td></tr>`;
+  if (!reqs.length) return `<tr><td colspan="${details ? 9 : 12}" class="muted">暂无请求</td></tr>`;
   return reqs.map((r) => {
     const t = requestTimeText(r);
     const title = [requestTimeText(r, true), r.model, r.endpoint].filter(Boolean).join(" · ");
     const model = esc(r.model || "—");
     if (details) {
-      return `<tr data-req-key="${esc(requestKey(r))}" title="${esc(title)}"><td>${esc(t)}</td><td>${model}</td><td class="mono">${esc(r.endpoint || "API")}</td><td>${finishBadge(r.finish)}</td><td class="num">${fmt(r.prompt_tokens)}</td><td class="num">${fmt(r.output_tokens)}</td><td class="num">${draftCell(r)}</td><td class="num">${fmt(r.duration_s, 1)}s</td></tr>`;
+      return `<tr data-req-key="${esc(requestKey(r))}" title="${esc(title)}"><td>${esc(t)}</td><td>${model}</td><td class="num">${slotCell(r)}</td><td class="mono">${esc(r.endpoint || "API")}</td><td>${finishBadge(r.finish)}</td><td class="num">${fmt(r.prompt_tokens)}</td><td class="num">${fmt(r.output_tokens)}</td><td class="num">${draftCell(r)}</td><td class="num">${fmt(r.duration_s, 1)}s</td></tr>`;
     }
     const fresh = r.prompt_tokens == null ? null : Math.max(0, Number(r.prompt_tokens) - Number(r.reused || 0));
     const prefill = fresh > 0 && r.prompt_ms > 0 ? fresh / (r.prompt_ms / 1000) : null;
     const hit = r.hit_rate == null ? "—" : `${(Number(r.hit_rate) * 100).toFixed(1)}%`;
-    return `<tr title="${esc(title)}"><td>${esc(t)}</td><td>${model}</td><td>${finishBadge(r.finish)}</td><td class="num">${fmt(r.prompt_tokens)}</td><td class="num">${fmt(r.reused)}</td><td class="num">${fmt(r.output_tokens)}</td><td class="num">${fmt(prefill)}</td><td class="num">${fmt(r.decode_tok_s, 1)}</td><td class="num">${esc(hit)}</td><td class="num">${draftCell(r)}</td><td class="num">${fmt(r.duration_s, 1)}s</td></tr>`;
+    return `<tr title="${esc(title)}"><td>${esc(t)}</td><td>${model}</td><td class="num">${slotCell(r)}</td><td>${finishBadge(r.finish)}</td><td class="num">${fmt(r.prompt_tokens)}</td><td class="num">${fmt(r.reused)}</td><td class="num">${fmt(r.output_tokens)}</td><td class="num">${fmt(prefill)}</td><td class="num">${fmt(r.decode_tok_s, 1)}</td><td class="num">${esc(hit)}</td><td class="num">${draftCell(r)}</td><td class="num">${fmt(r.duration_s, 1)}s</td></tr>`;
   }).join("");
 }
 
@@ -888,6 +1056,7 @@ function renderRequestDetail(r) {
   const rows = [
     ["时间", requestTimeText(r, true)],
     ["模型", r.model || "—"],
+    ["Slot", slotLabel(r)],
     ["端点", r.endpoint || "API"],
     ["状态", finishText(r.finish)],
     ["Prompt", fmt(r.prompt_tokens)],
@@ -1096,6 +1265,41 @@ async function selectModel(id) {
   } catch (e) {
     toast(`切换模型失败: ${e.message}`, "err", 8000);
     await loadConfig(true);
+  }
+}
+
+async function exportLlamaSwap() {
+  try {
+    const res = await fetch("/api/export/llama-swap");
+    if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "llama-swap.yaml";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast("llama-swap 配置已导出", "ok");
+  } catch (e) {
+    toast(`导出失败: ${e.message}`, "err", 8000);
+  }
+}
+
+async function saveAsConfig() {
+  const current = state.payload?.view?.config_name || state.payload?.active || "strata-config";
+  const suggested = current.replace(/^strata-/, "").replace(/\.json$/, "") + "-copy";
+  const name = prompt("将当前配置另存为：", suggested);
+  if (!name) return;
+  $("saveMenu").hidden = true;
+  try {
+    await saveConfig(true);
+    const payload = await post("/api/config/save-as", { name });
+    fillConfig(payload);
+    toast(`已另存为 ${payload.view?.config_name || name}`, "ok");
+  } catch (e) {
+    toast(`另存失败: ${e.message}`, "err", 8000);
   }
 }
 
@@ -1339,11 +1543,24 @@ function bindEvents() {
     });
   });
 
+  const collapseKey = (target) => `strata-console-collapse:${target}`;
   document.querySelectorAll(".adv-toggle").forEach((btn) => {
+    const body = $(btn.dataset.target);
+    if (!body) return;
+    try {
+      const saved = localStorage.getItem(collapseKey(btn.dataset.target));
+      if (saved === "1") {
+        body.classList.add("open");
+        btn.classList.add("open");
+      } else if (saved === "0") {
+        body.classList.remove("open");
+        btn.classList.remove("open");
+      }
+    } catch (_) {}
     btn.addEventListener("click", () => {
-      const body = $(btn.dataset.target);
       const open = body.classList.toggle("open");
       btn.classList.toggle("open", open);
+      try { localStorage.setItem(collapseKey(btn.dataset.target), open ? "1" : "0"); } catch (_) {}
     });
   });
 
@@ -1382,6 +1599,8 @@ function bindEvents() {
   bindTokenPreset("visionMaxTokens", "visionMaxTokensPreset");
   bindTokenPreset("maxTokens", "maxTokensPreset");
   bindTokenPreset("reasoningBudget", "reasoningBudgetPreset");
+  bindTokenPreset("conversationCacheMinTokens", "conversationCacheMinTokensPreset");
+  bindTokenPreset("conversationCacheParkGain", "conversationCacheParkGainPreset");
 
   $("configSelect").addEventListener("change", async () => {
     try {
@@ -1414,6 +1633,12 @@ function bindEvents() {
   });
   bindToggle("lazyRestart");
   bindToggle("fitMaxTokens");
+  bindToggle("vramElastic", updateOptionalVisibility);
+  bindToggle("answerRoom");
+  bindToggle("reasoningCloseRetry");
+  bindToggle("toolCallRecovery");
+  bindToggle("codexThreadTitles");
+  bindToggle("codexCompactionCache");
   bindToggle("mtpEnabled", (on) => {
     const v = state.payload?.view || {};
     $("mtpPath").disabled = !on;
@@ -1447,7 +1672,25 @@ function bindEvents() {
     updateOptionalVisibility();
     markDirty("visionCheck");
   });
-  $("visionDevice").addEventListener("change", () => { updateVisionNote(); updateVisionHint(true); });
+  $("lowRam").addEventListener("change", () => {
+    if (value("lowRam") === "resident") setField("residentBudgetGib", "");
+    updateLowRamUi();
+  });
+  $("residentBudgetGib").addEventListener("input", () => {
+    if (value("residentBudgetGib")) {
+      if (value("lowRam") !== "budget") setField("lowRam", "budget");
+    } else if (value("lowRam") === "budget") {
+      setField("lowRam", "mmap");
+    }
+    updateLowRamUi();
+  });
+  $("visionDevice").addEventListener("change", () => {
+    syncVisionExe();
+    updateVisionNote();
+    updateVisionHint(true);
+    updateOptionalVisibility();
+  });
+  bindToggle("visionElastic", updateOptionalVisibility);
   $("visionExe").addEventListener("input", () => { updateVisionNote(); updateVisionHint(); });
   $("visionMmproj").addEventListener("input", () => { updateVisionNote(); updateVisionHint(); });
 
@@ -1481,6 +1724,34 @@ function bindEvents() {
   });
   $("corsOrigins").addEventListener("input", updateCorsHint);
 
+  $("exportLlamaSwapBtn").addEventListener("click", exportLlamaSwap);
+  $("mergeUserArgsBtn").addEventListener("click", async () => {
+    if (!confirm("将 user_args 合并到配置并删除 user_args？\n\n合并后只以配置文件为准。")) return;
+    try {
+      const payload = await post("/api/user-args/merge");
+      fillConfig(payload);
+      toast("user_args 已合并到配置文件", "ok");
+    } catch (e) {
+      toast(`合并失败: ${e.message}`, "err", 8000);
+    }
+  });
+  $("saveMenuBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = $("saveMenu");
+    menu.hidden = !menu.hidden;
+    $("saveMenuBtn").setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  $("saveAsBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    saveAsConfig();
+  });
+  document.addEventListener("click", () => {
+    const menu = $("saveMenu");
+    if (menu && !menu.hidden) {
+      menu.hidden = true;
+      $("saveMenuBtn").setAttribute("aria-expanded", "false");
+    }
+  });
   $("saveBtn").addEventListener("click", async () => {
     try {
       const raw = state.live?.process?.state || "stopped";

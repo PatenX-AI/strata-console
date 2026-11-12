@@ -303,6 +303,12 @@ int main(int argc, char** argv) {
         send_json(res, 200, config_payload(app));
     });
 
+    svr.Get("/api/export/llama-swap", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!host_ok(req)) { send_error(res, 403, "只接受本机 Host"); return; }
+        res.set_header("Content-Disposition", "attachment; filename=\"llama-swap.yaml\"");
+        res.set_content(app.config.llama_swap_yaml(), "application/x-yaml; charset=utf-8");
+    });
+
     svr.Get("/api/models", [&](const httplib::Request& req, httplib::Response& res) {
         if (!host_ok(req)) { send_error(res, 403, "只接受本机 Host"); return; }
         send_json(res, 200, json{{"data_dir", app.config.data_dir()},
@@ -329,6 +335,29 @@ int main(int argc, char** argv) {
         if (!ok) return;
         std::string err;
         if (!app.config.set_data_dir(body.value("path", ""), err)) {
+            send_error(res, 400, err);
+            return;
+        }
+        send_json(res, 200, config_payload(app));
+    });
+
+    svr.Post("/api/config/save-as", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!validate_post(req, res) || !check_csrf(req, res, app.csrf)) return;
+        bool ok = false;
+        json body = parse_body(req, res, ok);
+        if (!ok) return;
+        std::string err;
+        if (!app.config.save_as(body.value("name", ""), err)) {
+            send_error(res, 400, err);
+            return;
+        }
+        send_json(res, 200, config_payload(app));
+    });
+
+    svr.Post("/api/user-args/merge", [&](const httplib::Request& req, httplib::Response& res) {
+        if (!validate_post(req, res) || !check_csrf(req, res, app.csrf)) return;
+        std::string err;
+        if (!app.config.merge_user_args_into_config(err)) {
             send_error(res, 400, err);
             return;
         }

@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -34,6 +35,7 @@ private:
     std::string log_path_;
     json health_ = json();
     json metrics_ = json();
+    std::map<std::string, int> slot_by_request_;
     std::string history_path_;
     json history_ = json::array();
     int64_t history_saved_ = 0;
