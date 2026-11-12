@@ -15,7 +15,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.1.3";
+constexpr const char* kVersion = "0.1.4";
 
 struct App {
     std::string app_dir;

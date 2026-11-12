@@ -1,6 +1,6 @@
 # Strata Console
 
-一个轻量的 Windows 本地 Web 控制台，用于启动、配置和监控 **Strata** 模型服务。界面沿用 Strata 官方网页的视觉语言，后台是原生 C++ 服务，不依赖 Electron 或 WebView。
+一个轻量的 Windows 本地 Web 控制台，用于启动、配置和监控 **Strata** 模型服务。支持多模型配置、会话缓存、Agent/工具调用参数、图片输入和 llama-swap 导出；界面沿用 Strata 官方网页的视觉语言，后台是原生 C++ 服务，不依赖 Electron 或 WebView。
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C)
@@ -14,9 +14,9 @@
 
 Strata 的启动参数很多，手动改 JSON、找日志、查显存状态容易出错。Strata Console 把这些操作集中到一个本地页面里：
 
-- **图形化配置**：模型路径、上下文、KV、图片输入、采样、GPU、缓存、网络、API Key、CORS 都可以在界面里改。
+- **图形化配置**：模型路径、上下文、KV、会话缓存、Agent/工具调用、采样、GPU、内存、网络、API Key、CORS 都可以在界面里改。
 - **自动重启**：服务中断后按启动参数自动恢复，默认以 `--lazy` 重启，模型等首个请求再加载。
-- **实时监控**：GPU、VRAM、温度、功耗、CPU、RAM、磁盘、PCIe、当前请求、最近请求和日志。
+- **实时监控**：GPU、VRAM、温度、功耗、CPU、RAM、磁盘、PCIe、会话缓存、当前请求、最近请求和日志。
 - **自动配置**：读取 Strata 自己的硬件检测和推荐规则，给出上下文等建议。
 - **官方风格**：与 Strata 的 Chat / Monitor 页面一致的卡片、字体、颜色，支持浅色和深色主题。
 - **轻量**：后台常驻约 13 MB 内存，不占显存，不使用浏览器内核做桌面壳。
@@ -28,10 +28,14 @@ Strata 的启动参数很多，手动改 JSON、找日志、查显存状态容�
 - 从 `Strata-data` 自动读取模型；基本设置提供当前模型选择器，支持多模型和 GGUF 原生模型。
 - 切换模型时自动同步 GGUF、Pack、Tokenizer、MTP、vision 等路径，无需分别设置。
 - 自动读取 Strata 的 `strata-*.json`，兼容 0.2.4 的 `user_args` 与 UTF-8 BOM。
-- 上下文、KV、图片、采样、思考强度、Reasoning Budget、存在/重复惩罚、低内存模式、GPU、投机解码、Prefill 分块、Expert Cache 等参数可视化。
-- 上下文、Max Tokens、Reasoning Budget、KV 驻留、Prefill 分块和视觉 token 支持预设 + 手动输入。
+- 上下文、KV、图片、采样、思考强度、Reasoning Budget、存在/重复/频率惩罚、低内存模式、GPU、投机解码、Prefill 分块、Expert Cache 等参数可视化。
+- **会话缓存**：预算、槽位、最小空闲 RAM、最小会话 token、重新 park 增量，支持 K 预设。
+- **Agent / 工具调用**：回答预留、思考闭合重试、循环恢复、重复停止、工具调用恢复、思考强度位置、Anthropic 思考模式、Codex 标题与压缩缓存。
+- **高级显存与并发**：VRAM 弹性回收、专家 Profile、resident 预算、CPU 专家线程、PLE I/O、parallel、队列和就绪超时。
+- 支持配置“另存为”，以及导出当前模型的 llama-swap YAML。
+- 上下文、Max Tokens、Reasoning Budget、KV 驻留、Prefill 分块、视觉 token 和会话缓存 token 支持预设 + 手动输入。
 - 参数名旁有 `?`，悬停显示说明、默认值和影响。
-- 配置按 **基本 / 推理 / 网络 / 配置管理** 分页，高级项折叠。
+- 配置按 **基本 / 推理 / 网络 / 配置管理** 分页；推理页分组折叠，状态会记住。
 
 ### 进程与稳定性
 
@@ -47,8 +51,8 @@ Strata 的启动参数很多，手动改 JSON、找日志、查显存状态容�
 ### 实时监控
 
 - 官方 Monitor 的关键指标：GPU 使用率、VRAM、温度、功耗、CPU、RAM、磁盘、PCIe。
-- 当前请求状态、预填/解码速度、上下文占用、专家缓存。
-- 最近请求表显示模型、专家缓存命中率、草稿接受率和耗时；点击可查看完整元数据。
+- 当前请求状态、预填/解码速度、上下文占用、会话缓存、专家缓存。
+- 最近请求表显示模型、Slot、专家缓存命中率、草稿接受率和耗时；点击可查看完整元数据。
 - 最近 500 条请求元数据跨会话保存，便于比较不同模型和量化版本。
 - 命令行 Tab 实时跟随 server/engine 日志。
 - 请求 Tab 显示 `/metrics` 元数据；开启 `api_monitor` 后可打开官方 `/api-monitor` 查看请求内容。
@@ -63,8 +67,8 @@ Strata 的启动参数很多，手动改 JSON、找日志、查显存状态容�
 
 ### 图片输入
 
-- 图片开关保留；支持 CPU / GPU 编码器选择。
-- 可配置视觉最大 tokens（默认 768）和 CPU 线程数（默认 8）。
+- 图片开关保留；支持 CPU / GPU 编码器选择，按运行位置自动使用对应的视觉 exe。
+- 可配置视觉最大/最小 tokens、CPU 线程数、按需启动、空闲卸载和弹性显存。
 - CPU 编码不占显存，适合显存紧张的长上下文配置；GPU 编码更快，但需要 CUDA 版 `strata-vision`。
 
 ### 备份与自动配置
@@ -148,7 +152,7 @@ fp16 | int8 | q4_0 | k8v4
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
-powershell -ExecutionPolicy Bypass -File .\package.ps1 -Version 0.1.3
+powershell -ExecutionPolicy Bypass -File .\package.ps1 -Version 0.1.4
 ```
 
 构建脚本通过 `vswhere` 查找 Visual Studio，也支持 `STRATA_VCVARS` 指定 `vcvars64.bat`。运行时包会生成在 `dist/`。

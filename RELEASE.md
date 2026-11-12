@@ -23,13 +23,13 @@
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1
-powershell -ExecutionPolicy Bypass -File .\package.ps1 -Version 0.1.3
+powershell -ExecutionPolicy Bypass -File .\package.ps1 -Version 0.1.4
 ```
 
 产物：
 
 ```text
-dist\strata-console-v0.1.3-win64.zip
+dist\strata-console-v0.1.4-win64.zip
 ```
 
 包内包含：
@@ -69,7 +69,7 @@ git init
 git branch -M main
 git add .
 git status --short
-git commit -m "Initial release: Strata Console 0.1.3"
+git commit -m "Initial release: Strata Console 0.1.4"
 ```
 
 创建远程仓库并推送（把 `<owner>`、`<repo>` 换成确认后的值）：
@@ -83,10 +83,10 @@ gh repo create <owner>/<repo> --public --source=. --remote=origin --push
 ## 5. 创建 Release
 
 ```powershell
-git tag v0.1.3
-git push origin v0.1.3
-gh release create v0.1.3 .\dist\strata-console-v0.1.3-win64.zip `
-  --title "Strata Console v0.1.3" `
+git tag v0.1.4
+git push origin v0.1.4
+gh release create v0.1.4 .\dist\strata-console-v0.1.4-win64.zip `
+  --title "Strata Console v0.1.4" `
   --notes-file RELEASE_NOTES.md
 ```
 
@@ -103,13 +103,13 @@ gh release create v0.1.3 .\dist\strata-console-v0.1.3-win64.zip `
 
 ```powershell
 gh repo view <owner>/<repo> --web
-gh release view v0.1.3 --web
+gh release view v0.1.4 --web
 ```
 
 确认：
 
 - 仓库中没有 `design-notes/`、`strata-console.json`、`strata-console.exe`、`build/`、`dist/`；
-- Release 页面有 `strata-console-v0.1.3-win64.zip`；
+- Release 页面有 `strata-console-v0.1.4-win64.zip`；
 - 下载 zip 后解压，双击 `strata-console.exe` 能打开控制台；
 - 没有把 API Key、control_token 或本机路径提交到仓库。
 

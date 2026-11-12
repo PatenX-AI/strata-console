@@ -2133,7 +2133,7 @@ std::string ConfigStore::llama_swap_yaml() const {
                       " --port " + std::to_string(port) +
                       " --host 127.0.0.1 --lazy";
     std::ostringstream y;
-    y << "# Strata Console v0.1.3 export\n"
+    y << "# Strata Console v0.1.4 export\n"
       << "# 当前模型: " << model_id << "\n"
       << "# 默认使用当前 Strata 端口 " << port << "。若与其它 llama-swap 模型冲突，\n"
       << "# 请把 cmd 和 proxy 中的 " << port << " 都改为 ${PORT}。\n"
